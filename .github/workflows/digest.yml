@@ -1,0 +1,29 @@
+# Сводка дня в Telegram-канал (21:00 по Минску): что влили и выкатили, сколько проверок, топ идей, кто строил.
+# Секреты TG_BOT_TOKEN и TG_CHAT (канал/чат, куда бот может писать). Без них — сводка только в журнале запуска.
+name: Сводка дня
+
+on:
+  schedule:
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Сводка
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TG_CHAT }}
+          STATUS_URL: https://raw.githubusercontent.com/${{ github.repository }}/status-data/status.json
+        run: node tools/status/digest.cjs

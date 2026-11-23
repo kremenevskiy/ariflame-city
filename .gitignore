@@ -22,3 +22,6 @@ photos/
 
 # пакеты мест развёртывания (партнёрские логотипы и названия) — не в репозиторий; для проверки локально: ?places=places/partners/minsk.json
 client/places/partners/
+
+# данные страницы статуса собирает сборка (dist/) и workflow status.yml (ветка status-data)
+client/status.json

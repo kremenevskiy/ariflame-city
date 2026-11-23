@@ -98,8 +98,8 @@ def prop(rid, key, dist, city="flame", cls="com", landmark=1, x=0.0, z=0.0, addr
 
 # ------------------------------------------------------------------ фильтр
 def test_clean_filter():
-    for bad in ("ХУЙ", "х у й", "xyй", "п1зда".replace("1", "и"), "блядь", "Bl yat".replace(" ", ""), "сука", "fuck you",
-                "заходи t.me/abc", "звони +375 29 123 45 67", "@spammer", "жыве беларусь", "лукашенко", "1488"):
+    for bad in ("ХУЙ", "х у й", "xyй", "п1зда".replace("1", "и"), "блядь", "Bl yat".replace(" ", ""), "сука", "fuck you",  # guard:allow
+                "заходи t.me/abc", "звони +375 29 123 45 67", "@spammer", "жыве беларусь", "лукашенко", "1488"):  # guard:allow
         assert C.clean(bad), bad
     for ok in ("Огненные", "Небо над городом", "ребята, все в штаб", "корабль", "Погоня за районом", "Хлеба и зрелищ",
                "BOSS"):
@@ -115,7 +115,7 @@ def test_create_rules(client):
     assert client.post("/g/crew/create", json={"token": TOK[RA], "tag": "XY", "name": "Второй"}).status_code == 409
     lvl(RB, 6)
     assert client.post("/g/crew/create", json={"token": TOK[RB], "tag": "огн", "name": "Копия"}).status_code == 409
-    assert client.post("/g/crew/create", json={"token": TOK[RB], "tag": "СУКА", "name": "Норм"}).status_code == 400
+    assert client.post("/g/crew/create", json={"token": TOK[RB], "tag": "СУКА", "name": "Норм"}).status_code == 400  # guard:allow
     assert client.post("/g/crew/create", json={"token": TOK[RB], "tag": "A", "name": "Норм"}).status_code == 400
     me = client.post("/g/crew/me", json={"token": TOK[RA]}).json()
     assert me["crew"]["id"] == cid and me["role"] == "leader" and me["crew"]["tag"] == "ОГН"
@@ -167,7 +167,7 @@ def test_chat_presets_text_filter_rate(client, monkeypatch):
     assert client.post("/g/crew/say", json={"token": TOK[RA], "k": "p", "v": 1}).json()["msg"]["v"] == C.PRESETS[1]
     assert client.post("/g/crew/say", json={"token": TOK[RA], "k": "e", "v": 0}).status_code == 200
     assert client.post("/g/crew/say", json={"token": TOK[RA], "k": "t", "v": "Сбор у штаба в 19:00"}).status_code == 200
-    assert client.post("/g/crew/say", json={"token": TOK[RA], "k": "t", "v": "иди на хуй"}).status_code == 400
+    assert client.post("/g/crew/say", json={"token": TOK[RA], "k": "t", "v": "иди на хуй"}).status_code == 400  # guard:allow
     assert client.post("/g/crew/say", json={"token": TOK[RA], "k": "t", "v": "x" * 121}).status_code == 400
     assert client.post("/g/crew/say", json={"token": TOK[RB], "k": "p", "v": 0}).status_code == 404     # не в клане
     monkeypatch.setattr(C, "SAY_EVERY", 3.0)

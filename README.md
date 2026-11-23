@@ -1,6 +1,7 @@
 # Флейм-Сити
 
-Браузерная 3D-игра в открытом городе в духе GTA — без установки, на компьютере, телефоне и в Telegram. Два города:
+Браузерная 3D-игра в открытом городе — машины, погони, задания, свой бизнес — без установки, на компьютере, телефоне и
+в Telegram. Два города:
 вымышленный **Флейм-Сити** и **«Минск 1:1»**, собранный из данных OpenStreetMap. Онлайн — свой лёгкий сервер на
 FastAPI + SQLite.
 
@@ -9,6 +10,13 @@ FastAPI + SQLite.
 | | |
 |---|---|
 | ![Флейм-Сити](docs/img/flame.png) | ![Телефон](docs/img/phone-minsk-phone-ui.png) |
+
+## Строим вместе
+
+Игру делают игроки: [предложи идею и проголосуй](https://github.com/kremenevskiy/ariflame-city/discussions/categories/ideas),
+добавь своё место в Минске, сделай фичу со своим ChatGPT или Claude — в [AGENTS.md](AGENTS.md) всё, чтобы ИИ собрал
+pull request. Что выкатилось, что проверяется и что добавилось за день — на странице
+[статуса города](https://city.ariflame.com/status.html). Как участвовать — [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Что внутри
 
@@ -74,8 +82,10 @@ docs/     ARCHITECTURE.md, DEPLOY.md, AUTH.md
 
 ## Лицензии
 
-Код и собственные ассеты — **MIT** ([LICENSE](LICENSE)). Данные Минска (`client/minsk/`, `client/tex/minsk-landmarks.json`)
-— **ODbL 1.0, © участники OpenStreetMap**, не MIT. Люди — Microsoft Rocketbox (MIT, © 2020 Microsoft) и Quaternius (CC0),
+Код и собственные ассеты — **[FSL-1.1-MIT](LICENSE)**: пользоваться, менять, учиться и присылать правки можно, выпускать
+конкурирующий коммерческий продукт — нет; каждая версия через два года становится MIT. Название и логотип —
+[TRADEMARKS.md](TRADEMARKS.md). Данные Минска (`client/minsk/`, `client/tex/minsk-landmarks.json`) — **ODbL 1.0,
+© участники OpenStreetMap**. Люди — Microsoft Rocketbox (MIT, © 2020 Microsoft) и Quaternius (CC0),
 three.js — MIT. Всё — в [ASSETS.md](ASSETS.md).
 
 Участие — [CONTRIBUTING.md](CONTRIBUTING.md), правила общения — [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), уязвимости —
@@ -85,7 +95,7 @@ three.js — MIT. Всё — в [ASSETS.md](ASSETS.md).
 
 ## English
 
-**Flame City** is an open-world 3D browser game in the spirit of GTA that runs without installation on desktop, mobile
+**Flame City** is an open-world 3D browser game — cars, chases, missions, your own business — that runs without installation on desktop, mobile
 and inside Telegram. It has two cities: the fictional *Flame City* and *Minsk 1:1*, built from OpenStreetMap data
 (real streets, buildings and addresses). Multiplayer is served by a small FastAPI + SQLite game server.
 
@@ -110,5 +120,7 @@ and a Python game server with its own SQLite database. Players are guests by def
 provider can be plugged in (client config + server webhook, see `docs/AUTH.md`). Self-hosting: `docs/DEPLOY.md`.
 Code comments and docs are in Russian; issues and pull requests in English are welcome too.
 
-**License:** code and own assets — MIT. Minsk map data — ODbL 1.0 (© OpenStreetMap contributors), not MIT.
+**Build it with us:** suggest and vote on ideas in Discussions, or hand `AGENTS.md` to your own AI agent and send a pull request — see `CONTRIBUTING.md`; live build status at https://city.ariflame.com/status.html.
+
+**License:** code and own assets — FSL-1.1-MIT (source-available: use, modify and contribute; no competing commercial product; each version becomes MIT after two years). Name and logo — `TRADEMARKS.md`. Minsk map data — ODbL 1.0 (© OpenStreetMap contributors).
 Rocketbox models — MIT (© 2020 Microsoft); Quaternius animations — CC0; three.js — MIT. See `ASSETS.md`.

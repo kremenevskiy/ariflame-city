@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Флейм-Сити — браузерная 3D-игра в открытом городе (и «Минск 1:1» из OpenStreetMap) с онлайн-сервером",
-  "license": "MIT",
+  "license": "FSL-1.1-MIT",
   "scripts": {
     "dev": "node tools/dev-server.cjs",
     "lint": "eslint client tools",

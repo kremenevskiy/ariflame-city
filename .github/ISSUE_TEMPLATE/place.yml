@@ -1,0 +1,42 @@
+name: Добавить место в Минске / Add a Minsk place
+description: Кафе, бульвар, двор, памятная скамейка, своё здание по фото — без кода, мы соберём
+labels: ["место"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Места — это данные (`client/places/minsk.json`, формат — `client/places/README.md`). Заполните форму — соберём сами
+        или кто-то из участников. Логотипы и названия заведений — только с согласия владельца (если это ваше заведение — так и напишите).
+  - type: input
+    id: name
+    attributes:
+      label: Что это / Name
+      placeholder: «Кофейня у фонтана», двор на Сурганова, бульвар…
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Где / Address or map link
+      description: Адрес или ссылка на точку в OpenStreetMap / Яндекс / Google картах.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: Как выглядит и что там делать / What it looks like
+      description: Фасад, вывеска, вход, интерьер, что происходит. Фото — только свои (их используем как референс, в игру не вставляем).
+  - type: dropdown
+    id: owner
+    attributes:
+      label: Это ваше заведение? / Is it your venue?
+      options:
+        - Нет, просто люблю это место
+        - Да, я владелец или представитель — разрешаю название и логотип в игре
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Правила / Rules
+      options:
+        - label: Без политики любой стороны, флагов и лозунгов, без рекламы и 18+ / No politics, flags or slogans, no ads, no 18+
+          required: true

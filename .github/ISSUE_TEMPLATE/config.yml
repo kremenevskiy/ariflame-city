@@ -1,5 +1,11 @@
 blank_issues_enabled: false
 contact_links:
+  - name: 💡 Идеи и голосование / Ideas & voting
+    url: https://github.com/kremenevskiy/ariflame-city/discussions/categories/ideas
+    about: Новая идея — темой в «Идеях», за чужие — голос ⬆. Самые нужные делаем первыми.
+  - name: 📊 Статус города / Live build status
+    url: https://city.ariflame.com/status.html
+    about: Что выкатилось, что проверяется, что добавилось за день.
   - name: Уязвимость / Security vulnerability
     url: https://docs.github.com/code-security/security-advisories/guidance-on-reporting-and-writing-information-about-vulnerabilities/privately-reporting-a-security-vulnerability
     about: Не публикуйте уязвимости в issues — сообщите приватно (SECURITY.md). Report privately, see SECURITY.md.

@@ -1,0 +1,87 @@
+# Отчёт в PR после проверок: итог сторожа содержания, снимки игры (компьютер и телефон), превью-сайт и метки.
+# Запускается по workflow_run — в контексте основного репозитория, но код PR здесь НЕ выполняется: артефакты CI — только
+# данные (статика для превью, картинки, JSON сторожа). Номер PR сверяется с коммитом через API.
+# Превью — Cloudflare Pages (секреты CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID; без них шаг пропускается).
+name: Отчёт по PR
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  report:
+    if: github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Артефакты проверки (только данные)
+        uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: art
+      - name: Какой это PR (сверка с коммитом)
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          PR=$(jq -r '.pr' art/guard/pr.json 2>/dev/null || echo "")
+          [[ "$PR" =~ ^[0-9]+$ ]] || { echo "нет номера PR"; exit 1; }
+          REAL=$(gh api "repos/$REPO/pulls/$PR" --jq .head.sha)
+          [ "$REAL" = "$HEAD_SHA" ] || { echo "коммит PR не совпадает — отчёт не пишем"; exit 1; }
+          echo "pr=$PR" >> "$GITHUB_OUTPUT"
+          BLOCK=$(jq '.block | length' art/guard/guard.json 2>/dev/null || echo 0)
+          REVIEW=$(jq '.review | length' art/guard/guard.json 2>/dev/null || echo 0)
+          echo "block=$BLOCK" >> "$GITHUB_OUTPUT"; echo "review=$REVIEW" >> "$GITHUB_OUTPUT"
+      - name: Превью на Cloudflare Pages
+        id: preview
+        if: steps.pr.outputs.block == '0'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PR: ${{ steps.pr.outputs.pr }}
+        run: |
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "секретов Cloudflare нет — без превью"; exit 0; }
+          mkdir -p "$RUNNER_TEMP/site" && tar -xzf art/dist/dist.tgz -C "$RUNNER_TEMP/site"
+          # статика из PR — данные: никаких функций и заголовков Pages из чужого кода
+          rm -rf "$RUNNER_TEMP/site/_worker.js" "$RUNNER_TEMP/site/functions" "$RUNNER_TEMP/site/_headers" "$RUNNER_TEMP/site/_redirects"
+          mkdir -p "$RUNNER_TEMP/site/_shots" && cp art/shots/*.png "$RUNNER_TEMP/site/_shots/" 2>/dev/null || true
+          cd "$RUNNER_TEMP"
+          npx --yes wrangler@3 pages deploy site --project-name=flame-city-preview --branch="pr-$PR" --commit-dirty=true > deploy.log 2>&1 || { cat deploy.log; exit 0; }
+          echo "url=https://pr-$PR.flame-city-preview.pages.dev" >> "$GITHUB_OUTPUT"
+      - name: Комментарий в PR и метки
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PR: ${{ steps.pr.outputs.pr }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          PREVIEW: ${{ steps.preview.outputs.url }}
+          BLOCK: ${{ steps.pr.outputs.block }}
+          REVIEW: ${{ steps.pr.outputs.review }}
+        run: |
+          {
+            echo "<!-- fc-report -->"
+            if [ "$CONCLUSION" = "success" ]; then echo "### ✅ Проверки прошли"; else echo "### ❌ Проверки не прошли — [что упало]($RUN_URL)"; fi
+            if [ -n "$PREVIEW" ]; then
+              echo ""; echo "**Поиграть в этой версии:** $PREVIEW/?city=minsk · [Флейм-Сити]($PREVIEW/?city=flame)"
+              for s in minsk flame phone-minsk; do [ -f "art/shots/$s.png" ] && echo "<img src=\"$PREVIEW/_shots/$s.png\" width=\"32%\">"; done
+            fi
+            echo ""
+            jq -r '"**Сторож содержания:** " + (if (.block|length) > 0 then "нужно исправить " + (.block|length|tostring) else "чисто" end) + (if (.review|length) > 0 then " · мейнтейнер посмотрит " + (.review|length|tostring) else "" end)' art/guard/guard.json 2>/dev/null || true
+            jq -r '.block[]? | "- `" + .file + (if .line > 0 then ":" + (.line|tostring) else "" end) + "` — " + .why' art/guard/guard.json 2>/dev/null | head -30
+            echo ""; echo "<sub>Отчёт собирает бот после каждой проверки. Правила — AGENTS.md, вопросы — прямо здесь в PR.</sub>"
+          } > body.md
+          ID=$(gh api "repos/$REPO/issues/$PR/comments" --paginate --jq '.[] | select(.body | startswith("<!-- fc-report -->")) | .id' | head -1)
+          if [ -n "$ID" ]; then gh api -X PATCH "repos/$REPO/issues/comments/$ID" -F body=@body.md > /dev/null; else gh api "repos/$REPO/issues/$PR/comments" -F body=@body.md > /dev/null; fi
+          if [ "$BLOCK" != "0" ]; then gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=нужно исправить" > /dev/null || true; fi
+          if [ "$REVIEW" != "0" ]; then gh api "repos/$REPO/issues/$PR/labels" -f "labels[]=смотрит мейнтейнер" > /dev/null || true; fi

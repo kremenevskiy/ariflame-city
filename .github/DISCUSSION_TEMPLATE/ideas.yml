@@ -1,0 +1,24 @@
+title: "[Идея] "
+labels: ["идея"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Одна идея — одна тема. Голосуйте за чужие стрелкой ⬆ — самые нужные делаем первыми. Без политики любой стороны.
+  - type: textarea
+    id: idea
+    attributes:
+      label: Что добавить / What to add
+      description: Место в Минске, машина, задание, механика, улучшение — и почему игрокам это понравится.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: Как это может работать / How it could work
+  - type: checkboxes
+    id: self
+    attributes:
+      label: Хочу сделать сам / I want to build it
+      options:
+        - label: Попробую сделать сам или со своим ИИ (CONTRIBUTING.md → «Со своим ИИ»)

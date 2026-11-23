@@ -1,0 +1,46 @@
+# Выпуск: после зелёных проверок коммита в main собранная статика уходит в выпуск «live» (dist.tgz + sha256).
+# Сайт забирает его сам (tools/deploy/pull-live.sh по таймеру на сервере) — ключей от сервера в GitHub нет.
+name: Выпуск
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Сборка из проверенного коммита
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: out
+      - name: Выпуск live
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          TITLE: ${{ github.event.workflow_run.display_title }}
+        run: |
+          cd out
+          SHORT=${SHA:0:7}
+          mv dist.tgz "dist-$SHORT.tgz"
+          sha256sum "dist-$SHORT.tgz" > "dist-$SHORT.tgz.sha256"
+          printf '%s\n%s\n' "$SHA" "$TITLE" > notes.txt
+          gh release delete live --repo "$REPO" --yes --cleanup-tag 2>/dev/null || true
+          gh release create live --repo "$REPO" --title "Сейчас на сайте: $SHORT" --notes-file notes.txt --target "$SHA" --latest \
+            "dist-$SHORT.tgz" "dist-$SHORT.tgz.sha256"

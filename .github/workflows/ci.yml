@@ -1,3 +1,6 @@
+# Проверки каждого PR и каждого коммита в main. Работает без секретов и с правами только на чтение — так безопасно
+# запускать код из чужих форков. Всё, что требует секретов (превью, комментарий в PR, выпуск), делают отдельные
+# workflow по событию workflow_run и берут отсюда только артефакты как данные (pr-report.yml, release.yml).
 name: CI
 
 on:
@@ -8,11 +11,53 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: true
+
 jobs:
-  lint:
+  guard:
+    name: Сторож содержания
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Сторож из базовой ветки (PR не может ослабить его под себя)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          git fetch -q origin "$BASE_REF"
+          mkdir -p "$RUNNER_TEMP/guard" report
+          for f in content-guard.cjs words.cjs; do
+            git show "origin/$BASE_REF:tools/check/$f" > "$RUNNER_TEMP/guard/$f" 2>/dev/null || cp "tools/check/$f" "$RUNNER_TEMP/guard/$f"
+          done
+          GUARD_JSON=report/guard.json node "$RUNNER_TEMP/guard/content-guard.cjs" "origin/$BASE_REF"
+      - name: Номер PR и коммит — для отчёта (pr-report.yml сверяет их сам)
+        if: always()
+        env:
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mkdir -p report && echo "{\"pr\": $PR, \"sha\": \"$SHA\"}" > report/pr.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: guard
+          path: report/
+          retention-days: 7
+
+  lint:
+    name: Линтер и сборка
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -22,11 +67,23 @@ jobs:
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       - run: npm run lint
       - run: node tools/gen_tracks.cjs --check
+      - run: npm run build
+      - name: Сборка — для превью и выпуска (без config.js выкладки и без закрытых пакетов)
+        run: tar -czf dist.tgz -C dist .
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist.tgz
+          retention-days: 7
 
   server:
+    name: Тесты сервера
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -36,10 +93,14 @@ jobs:
       - run: python -m pytest server/tests -q -p no:cacheprovider
 
   smoke:
+    name: Игра в браузере (оба города и телефон)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: [lint, server]
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -54,4 +115,10 @@ jobs:
           (cd server && FC_DB=/tmp/fcg/game.db nohup uvicorn app:app --host 127.0.0.1 --port 8091 --ws websockets > /tmp/fcg.log 2>&1 &)
           nohup node tools/dev-server.cjs > /tmp/dev.log 2>&1 &
           for i in $(seq 1 30); do curl -sf http://127.0.0.1:8080/g/health && break; sleep 1; done
-      - run: node tools/check/smoke.cjs --phone
+      - run: node tools/check/smoke.cjs --phone --shots shots
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shots
+          path: shots/
+          retention-days: 7

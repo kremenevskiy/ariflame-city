@@ -1,0 +1,4 @@
+# Каждый PR смотрит владелец; проверки и CI — особенно (их правка — только через него)
+* @kremenevskiy
+/.github/ @kremenevskiy
+/tools/check/ @kremenevskiy

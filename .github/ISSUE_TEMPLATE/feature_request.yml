@@ -1,7 +1,12 @@
-name: Идея / Feature request
-description: Предложить механику, миссию, место, улучшение
-labels: ["enhancement"]
+name: Задача по идее / Feature task
+description: Идея, за которую проголосовали, — как задача для реализации (сами идеи — в Обсуждениях → Идеи)
+labels: ["idea"]
 body:
+  - type: markdown
+    attributes:
+      value: |
+        Просто идея? Её лучше в [Обсуждения → Идеи](https://github.com/kremenevskiy/ariflame-city/discussions/categories/ideas) — там голосуют.
+        Здесь — задача, которую можно брать в работу: чем точнее (файлы, как проверить), тем проще её сделать человеку и ИИ.
   - type: textarea
     id: idea
     attributes:
@@ -13,6 +18,18 @@ body:
     id: how
     attributes:
       label: Как это может работать / How it could work
+  - type: textarea
+    id: done
+    attributes:
+      label: Как понять, что готово / Acceptance
+      description: Что увидит игрок; на каком экране или в каком месте проверить.
+  - type: dropdown
+    id: who
+    attributes:
+      label: Кто делает / Who
+      options:
+        - Хочу сделать сам (руками или со своим ИИ)
+        - Пусть возьмёт кто-нибудь
   - type: checkboxes
     id: rules
     attributes:

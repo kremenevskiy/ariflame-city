@@ -22,3 +22,6 @@ function squeeze(file) {
 for (const f of fs.readdirSync(OUT)) if (/^f[a-z0-9]+\.js$/.test(f)) squeeze(path.join(OUT, f));
 for (const f of fs.readdirSync(path.join(OUT, "data"))) if (f.endsWith(".js")) squeeze(path.join(OUT, "data", f));
 console.log(`dist/: ${n} модулей, ${(before / 1024).toFixed(0)} → ${(after / 1024).toFixed(0)} КБ`);
+// страница «Статус города» (status.html): лента изменений по дням из git — свежее (проверки, PR, идеи) она берёт с GitHub сама
+try { require("child_process").execFileSync(process.execPath, [path.join(__dirname, "status", "build-status.cjs"), path.join(OUT, "status.json")], { stdio: "inherit" }); }
+catch (e) { console.warn("status.json не собран:", e.message); }

@@ -1,0 +1,52 @@
+# Страница «Статус города» (city.ariflame.com/status.html): каждые полчаса и после каждой проверки/выкатки собирает
+# status.json (проверки, PR, лента по дням, идеи по голосам, участники) и кладёт в ветку status-data — страница читает её
+# напрямую. Код PR здесь не запускается: берётся только main.
+name: Статус
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_run:
+    workflows: [CI, Выпуск]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+  pull-requests: read
+  issues: read
+  discussions: read
+
+concurrency:
+  group: status
+  cancel-in-progress: true
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 300
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Собрать status.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node tools/status/build-status.cjs "$RUNNER_TEMP/status.json"
+      - name: В ветку status-data (одна запись, без истории)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/sd" && cd "$RUNNER_TEMP/sd"
+          cp "$RUNNER_TEMP/status.json" .
+          git init -q -b status-data
+          git add status.json
+          git -c user.name="flame-city-bot" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -qm "статус города"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" status-data

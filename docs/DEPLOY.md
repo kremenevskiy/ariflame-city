@@ -173,6 +173,22 @@ BASE=https://game.example.org/ npm run check                                # о
 `t.me/<бот>?startapp=fc_<город>_<x>_<z>` (переход в точку). Сторис из фоторежима требуют публичный HTTPS-адрес кадра
 (`FC_PUBLIC`).
 
+## Автовыкатка (сайт сам забирает проверенный выпуск)
+
+После слияния в `main` и зелёных проверок workflow «Выпуск» кладёт собранную статику в GitHub-выпуск `live`
+(`dist-<коммит>.tgz` + `.sha256`). Сервер раз в минуту забирает его сам — ключей от сервера в GitHub нет:
+
+```bash
+# один раз: своё поверх выпуска (то, чего нет в открытом репо) и переход на выпуски-папки со ссылкой
+mkdir -p /srv/city-overlay && cp /var/www/city/config.js /srv/city-overlay/      # + music/, places/partners/ — если есть
+mv /var/www/city /var/www/city-legacy && mkdir -p /var/www/city-releases
+REPO=owner/repo DEST=/var/www/city sh tools/deploy/pull-live.sh                  # первая выкатка создаст ссылку
+# таймер (cron): * * * * * REPO=owner/repo sh /opt/city/pull-live.sh >> /var/log/city-pull.log 2>&1
+```
+
+Скрипт сверяет sha256, раскладывает выпуск в новую папку, кладёт поверх `OVERLAY`, пишет `version.txt` (его читает
+страница статуса) и атомарно переключает ссылку `DEST`; хранит последние 5 выпусков — откат = переключить ссылку.
+
 ## ODbL
 
 Если выкладываете «Минск 1:1»: данные `client/minsk/` и `client/tex/minsk-landmarks.json` — производная база OpenStreetMap

@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Статус города — Флейм-Сити</title>
+<meta name="description" content="Флейм-Сити строят игроки: что выкатилось, что проверяется, что добавилось за день, какие идеи в топе.">
+<meta property="og:title" content="Флейм-Сити — статус стройки">
+<meta property="og:description" content="Город строят игроки. Что выкатилось, что проверяется, что добавилось сегодня.">
+<meta property="og:image" content="loader/minsk-library.webp">
+<link rel="icon" href="brand/icon-192.png">
+<!-- Страница статуса (tools/status/build-status.cjs → status.json; свежие данные — ветка status-data, их собирает
+     .github/workflows/status.yml каждые полчаса). Без сборщика и библиотек: один файл. -->
+<style>
+@font-face{font-family:Oswald;font-weight:600;font-display:swap;src:url(fonts/oswald-cyrillic-600-normal.woff2) format("woff2");unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:Oswald;font-weight:600;font-display:swap;src:url(fonts/oswald-latin-600-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F}
+@font-face{font-family:Oswald;font-weight:400;font-display:swap;src:url(fonts/oswald-cyrillic-400-normal.woff2) format("woff2");unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:Oswald;font-weight:400;font-display:swap;src:url(fonts/oswald-latin-400-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F}
+:root{
+  --night:#0a0f22;--night2:#111a36;--panel:rgba(17,26,54,.82);--line:rgba(255,243,223,.12);
+  --sign:#0d56a3;--sign-hi:#1b6fc6;--ember:#ffb347;--flame:#ff7a2f;--warm:#fff3df;--muted:rgba(255,243,223,.66);
+  --ok:#5ee08f;--bad:#ff5d6c;--run:#ffd166;
+  --disp:Oswald,"Arial Narrow","Roboto Condensed",system-ui,sans-serif;--body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--night);color:var(--warm);font:400 15px/1.5 var(--body);-webkit-font-smoothing:antialiased}
+a{color:inherit}
+img{display:block}
+.wrap{width:min(1120px,100%);margin:0 auto;padding:0 16px}
+
+/* ---- шапка: ключ-арт ночного Минска, табло из табличек-указателей ---- */
+.hero{position:relative;min-height:540px;display:flex;align-items:flex-end;overflow:hidden;isolation:isolate}
+.hero picture,.hero img.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2}
+.hero::after{content:"";position:absolute;inset:0;z-index:-1;background:
+  linear-gradient(180deg,rgba(10,15,34,.15) 0%,rgba(10,15,34,.25) 38%,rgba(10,15,34,.92) 82%,var(--night) 100%),
+  radial-gradient(120% 60% at 15% 100%,rgba(255,122,47,.28),transparent 60%)}
+.top{position:absolute;top:0;left:0;right:0;display:flex;justify-content:space-between;align-items:center;padding:16px max(16px,calc((100% - 1120px)/2 + 16px))}
+.brand{display:flex;gap:10px;align-items:center;font:600 18px/1 var(--disp);letter-spacing:.04em;text-transform:uppercase;text-decoration:none}
+.play{font:600 15px/1 var(--disp);letter-spacing:.05em;text-transform:uppercase;text-decoration:none;background:linear-gradient(180deg,var(--ember),var(--flame));color:#2a1205;padding:11px 18px;border-radius:10px;box-shadow:0 6px 24px rgba(255,122,47,.35)}
+.play:focus-visible,.btn:focus-visible,a:focus-visible{outline:3px solid var(--ember);outline-offset:3px}
+.hero .wrap{padding-bottom:28px}
+h1{margin:0;font:600 clamp(44px,8vw,92px)/.92 var(--disp);text-transform:uppercase;letter-spacing:.01em;text-shadow:0 4px 0 rgba(0,0,0,.35),0 0 40px rgba(255,140,40,.35)}
+.lead{margin:14px 0 22px;max-width:640px;font-size:17px;color:var(--muted)}
+.lead b{color:var(--warm)}
+.board{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.plate{background:var(--sign);border:2px solid rgba(255,255,255,.85);border-radius:8px;padding:10px 12px 11px;box-shadow:0 3px 0 rgba(0,0,0,.35),inset 0 0 0 2px var(--sign);min-height:84px}
+.plate small{display:block;font:600 12px/1 var(--disp);letter-spacing:.08em;text-transform:uppercase;opacity:.85}
+.plate b{display:block;margin-top:6px;font:600 24px/1.05 var(--disp);letter-spacing:.01em}
+.plate i{display:block;margin-top:3px;font-style:normal;font-size:12.5px;opacity:.85}
+.dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:7px;vertical-align:1px;background:var(--muted)}
+.dot.ok{background:var(--ok)}.dot.bad{background:var(--bad)}.dot.run{background:var(--run);animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{50%{opacity:.35}}
+
+/* ---- разделы ---- */
+main{padding:10px 0 60px}
+section{margin-top:44px}
+h2{display:flex;align-items:baseline;gap:12px;margin:0 0 14px;font:600 30px/1 var(--disp);text-transform:uppercase;letter-spacing:.02em}
+h2 span{font:400 14px/1.3 var(--body);text-transform:none;letter-spacing:0;color:var(--muted)}
+.grid2{display:grid;grid-template-columns:1.25fr 1fr;gap:18px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.card h3{margin:0 0 8px;font:600 17px/1.2 var(--disp);text-transform:uppercase;letter-spacing:.04em;color:var(--ember)}
+.row{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-top:1px solid var(--line)}
+.row:first-of-type{border-top:0}
+.row .ava{width:26px;height:26px;border-radius:50%;flex:none;background:var(--night2)}
+.row .t{flex:1;min-width:0}
+.row .t a{text-decoration:none}.row .t a:hover{text-decoration:underline}
+.row .t small{display:block;color:var(--muted);font-size:12.5px}
+.chip{flex:none;font:600 11.5px/1 var(--body);padding:5px 8px;border-radius:999px;border:1px solid var(--line);white-space:nowrap}
+.chip.ok{color:var(--ok);border-color:rgba(94,224,143,.35)}.chip.bad{color:var(--bad);border-color:rgba(255,93,108,.4)}.chip.run{color:var(--run);border-color:rgba(255,209,102,.4)}
+.empty{color:var(--muted);padding:6px 0 2px}
+.card.empty{padding:14px 16px}
+
+/* лента по дням — как журнал заданий */
+.days{display:grid;gap:14px}
+.day{display:grid;grid-template-columns:150px 1fr;gap:16px}
+.day .d{font:600 22px/1 var(--disp);text-transform:uppercase;padding-top:12px}
+.day .d small{display:block;margin-top:5px;font:400 13px/1.2 var(--body);text-transform:none;color:var(--muted)}
+.kind{flex:none;width:26px;height:26px;border-radius:7px;display:grid;place-items:center;font-size:14px;background:var(--night2)}
+.kind.merged{background:rgba(255,179,71,.16)}.kind.deploy{background:rgba(94,224,143,.14)}.kind.commit{background:rgba(27,111,198,.22)}
+
+/* идеи — голоса */
+.ideas{display:grid;gap:10px}
+.idea{display:grid;grid-template-columns:64px 1fr auto;gap:14px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.votes{text-align:center;font:600 26px/1 var(--disp)}
+.votes small{display:block;font:400 11px/1.2 var(--body);color:var(--muted);margin-top:3px}
+.idea .t a{font-weight:600;text-decoration:none}.idea .t a:hover{text-decoration:underline}
+.idea .t small{display:block;color:var(--muted);font-size:12.5px}
+.btn{display:inline-block;text-decoration:none;font:600 13px/1 var(--body);padding:9px 12px;border-radius:10px;background:rgba(255,243,223,.08);border:1px solid var(--line);white-space:nowrap}
+.btn.hot{background:var(--sign);border-color:rgba(255,255,255,.7)}
+.crew{display:flex;flex-wrap:wrap;gap:10px}
+.crew a{display:flex;flex-direction:column;align-items:center;gap:5px;width:78px;text-decoration:none;font-size:12px;color:var(--muted)}
+.crew img{width:56px;height:56px;border-radius:50%;border:2px solid var(--line)}
+.crew a:hover img{border-color:var(--ember)}
+
+/* как добавить своё — три шага */
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.step{background:linear-gradient(180deg,rgba(13,86,163,.35),rgba(17,26,54,.9));border:1px solid rgba(255,255,255,.18);border-radius:14px;padding:16px}
+.step b{display:block;font:600 20px/1.1 var(--disp);text-transform:uppercase;margin-bottom:6px}
+.step p{margin:0 0 12px;color:var(--muted)}
+footer{border-top:1px solid var(--line);padding:22px 0 40px;color:var(--muted);font-size:13px}
+footer a{color:var(--warm)}
+
+@media (max-width:860px){
+  .board{grid-template-columns:repeat(2,1fr)}.grid2,.steps{grid-template-columns:1fr}
+  .day{grid-template-columns:1fr;gap:6px}.day .d{padding-top:0}
+  h2{flex-wrap:wrap;gap:4px 12px}h2 span{flex-basis:100%}
+  .hero{min-height:620px}
+}
+@media (max-width:420px){.idea{grid-template-columns:52px 1fr}.idea .btn{grid-column:2}.plate b{font-size:20px}}
+@media (prefers-reduced-motion:reduce){.dot.run{animation:none}}
+</style>
+</head>
+<body>
+<header class="hero">
+  <img class="bg" src="loader/minsk-library.webp" alt="">
+  <div class="top">
+    <a class="brand" href="./">Флейм-Сити</a>
+    <a class="play" href="./?city=minsk">Играть</a>
+  </div>
+  <div class="wrap">
+    <h1>Город<br>строится</h1>
+    <p class="lead">Флейм-Сити строят игроки: кто-то предлагает идею, кто-то делает её со своим ИИ, мы проверяем и выкатываем. <b>Здесь видно всё в прямом эфире</b> — что уехало на сайт, что проверяется, что добавилось за день.</p>
+    <div class="board" aria-live="polite">
+      <div class="plate"><small>На сайте</small><b id="p-ver">—</b><i id="p-ver2">загружаю…</i></div>
+      <div class="plate"><small>Проверки</small><b id="p-ci">—</b><i id="p-ci2">загружаю…</i></div>
+      <div class="plate"><small>Сейчас идёт</small><b id="p-now">—</b><i id="p-now2">загружаю…</i></div>
+      <div class="plate"><small>В городе</small><b id="p-on">—</b><i id="p-on2">игроков онлайн</i></div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section>
+    <h2>Прямо сейчас <span id="gen"></span></h2>
+    <div class="grid2">
+      <div class="card"><h3>Проверки и выкатки</h3><div id="runs"><div class="empty">Загружаю…</div></div></div>
+      <div class="card"><h3>Ждут проверки</h3><div id="prs"><div class="empty">Загружаю…</div></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Лента стройки <span>что добавилось в город по дням</span></h2>
+    <div class="days" id="days"><div class="empty">Загружаю…</div></div>
+  </section>
+
+  <section>
+    <h2>Город хочет <span>идеи игроков — голосуй, самые нужные делаем первыми</span></h2>
+    <div class="ideas" id="ideas"><div class="empty">Загружаю…</div></div>
+  </section>
+
+  <section>
+    <h2>Строители города</h2>
+    <div class="crew" id="crew"><div class="empty">Загружаю…</div></div>
+  </section>
+
+  <section>
+    <h2>Как добавить своё</h2>
+    <div class="steps">
+      <div class="step"><b>Предложи</b><p>Напиши, что добавить: место в Минске, машину, задание, механику. Голосуй за чужие идеи.</p><a class="btn hot" id="l-idea" href="#">Предложить идею</a></div>
+      <div class="step"><b>Сделай со своим ИИ</b><p>Дай ChatGPT или Claude ссылку на репозиторий и идею — в AGENTS.md всё, чтобы он собрал pull request.</p><a class="btn" id="l-ai" href="#">Как это сделать</a></div>
+      <div class="step"><b>Увидь в игре</b><p>Мы проверяем, вливаем — и изменение само уезжает на сайт. Твоё имя — в ленте и среди строителей.</p><a class="btn" href="./?city=minsk">Открыть город</a></div>
+    </div>
+  </section>
+</main>
+
+<footer class="wrap">
+  Код — <a id="l-repo" href="#">GitHub</a> · данные Минска © участники OpenStreetMap (ODbL) · страница обновляется сама каждую минуту
+</footer>
+
+<script>
+(function () {
+  "use strict";
+  var REPO = "kremenevskiy/ariflame-city";
+  var GH = "https://github.com/" + REPO;
+  var REMOTE = "https://raw.githubusercontent.com/" + REPO + "/status-data/status.json";
+  var $ = function (id) { return document.getElementById(id); };
+  $("l-repo").href = GH; $("l-idea").href = GH + "/discussions/new?category=ideas"; $("l-ai").href = GH + "/blob/main/CONTRIBUTING.md#со-своим-ии";
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]; }); }
+  function ago(iso) {
+    var s = Math.max(0, (Date.now() - Date.parse(iso)) / 1000);
+    if (s < 90) return "только что"; if (s < 3600) return Math.round(s / 60) + " мин назад";
+    if (s < 86400) return Math.round(s / 3600) + " ч назад"; return Math.round(s / 86400) + " дн назад";
+  }
+  var MON = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+  function dayName(d) {
+    var today = new Date(Date.now() + 3 * 3600e3).toISOString().slice(0, 10), y = new Date(Date.now() - 21 * 3600e3).toISOString().slice(0, 10);
+    var p = d.split("-"); var long = +p[2] + " " + MON[+p[1] - 1];
+    return d === today ? ["Сегодня", long] : d === y ? ["Вчера", long] : [long, ""];
+  }
+  function ava(u) { return u && u.avatar ? "<img class='ava' alt='' loading='lazy' src='" + esc(u.avatar) + "&s=52'>" : "<span class='ava'></span>"; }
+  function runState(r) { return r.status !== "completed" ? "run" : r.conclusion === "success" ? "ok" : r.conclusion === "skipped" || r.conclusion === "cancelled" ? "" : "bad"; }
+  var RUN_TXT = { run: "идёт", ok: "зелёная", bad: "упала", "": "пропущена" };
+  var NAMES = { "CI": "Проверки", "Выпуск": "Выкатка на сайт", "Отчёт по PR": "Отчёт по PR", "Статус": "Статус", "Сводка дня": "Сводка дня" };
+
+  function getJSON(u) { return fetch(u, { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); }); }
+  function load() {
+    // свежие данные — с GitHub (ветка status-data), иначе — то, что положила сборка рядом со страницей
+    return Promise.all([getJSON(REMOTE).catch(function () { return null; }), getJSON("status.json").catch(function () { return null; })])
+      .then(function (a) { var r = a[0], l = a[1]; if (r && l) return Date.parse(r.generated) >= Date.parse(l.generated) ? r : l; return r || l; });
+  }
+
+  function render(S) {
+    if (!S) { ["runs", "prs", "days", "ideas", "crew"].forEach(function (id) { $(id).innerHTML = "<div class='empty'>Данные пока не собрались — загляни через минуту.</div>"; }); return; }
+    $("gen").textContent = "обновлено " + ago(S.generated);
+    var runs = S.runs || [], ci = runs.filter(function (r) { return r.name === "CI"; });
+    var running = runs.filter(function (r) { return r.status !== "completed"; });
+    // табло: проверки
+    if (ci.length) {
+      var done = ci.filter(function (r) { return r.status === "completed"; }).slice(0, 20), green = done.filter(function (r) { return r.conclusion === "success"; }).length;
+      var st = ci[0].status !== "completed" ? "run" : ci[0].conclusion === "success" ? "ok" : "bad";
+      $("p-ci").innerHTML = "<span class='dot " + st + "'></span>" + green + " из " + done.length;
+      $("p-ci2").textContent = "зелёных из последних · " + ago(ci[0].updated);
+    } else { $("p-ci").textContent = "—"; $("p-ci2").textContent = S.source === "git" ? "откроются вместе с репозиторием" : "пока не было"; }
+    $("p-now").innerHTML = running.length ? "<span class='dot run'></span>" + running.length + " " + (running.length === 1 ? "проверка" : "проверки") : "<span class='dot ok'></span>тихо";
+    $("p-now2").textContent = running.length ? (NAMES[running[0].name] || running[0].name) + ": " + running[0].title : (S.openPRs || []).length + " PR ждут проверки";
+    // прямо сейчас: запуски
+    $("runs").innerHTML = runs.length ? runs.slice(0, 8).map(function (r) {
+      var s = runState(r);
+      return "<div class='row'>" + ava(r.actor) + "<div class='t'><a href='" + esc(r.url) + "' rel='noopener'>" + esc(r.title) + "</a><small>" + esc(NAMES[r.name] || r.name) +
+        (r.pr ? " · PR #" + r.pr : r.branch === "main" ? " · main" : "") + " · " + ago(r.at) + "</small></div><span class='chip " + s + "'>" + RUN_TXT[s] + "</span></div>";
+    }).join("") : "<div class='empty'>" + (S.source === "git" ? "Проверки появятся здесь, когда репозиторий откроется." : "Пока тихо.") + "</div>";
+    $("prs").innerHTML = (S.openPRs || []).length ? S.openPRs.slice(0, 8).map(function (p) {
+      var s = p.checks === "running" ? "run" : p.checks === "success" ? "ok" : p.checks === "failure" ? "bad" : "";
+      return "<div class='row'>" + ava(p.user) + "<div class='t'><a href='" + esc(p.url) + "' rel='noopener'>#" + p.number + " " + esc(p.title) + "</a><small>" + esc(p.user && p.user.login) + " · " + ago(p.updated) +
+        (p.draft ? " · черновик" : "") + "</small></div><span class='chip " + s + "'>" + (s === "ok" ? "проверки ✓" : s === "bad" ? "надо поправить" : s === "run" ? "проверяется" : "ждёт") + "</span></div>";
+    }).join("") : "<div class='empty'>Открытых PR нет — <a href='" + GH + "/blob/main/CONTRIBUTING.md'>сделай первый</a>.</div>";
+    // лента по дням
+    var ICON = { merged: "🧩", deploy: "🚀", commit: "🔧" };
+    $("days").innerHTML = (S.days || []).length ? S.days.slice(0, 10).map(function (d) {
+      var n = dayName(d.day);
+      return "<div class='day'><div class='d'>" + esc(n[0]) + "<small>" + esc(n[1] || "") + (n[1] ? " · " : "") + d.items.length + " " + (d.items.length === 1 ? "изменение" : d.items.length < 5 ? "изменения" : "изменений") + "</small></div>" +
+        "<div class='card'>" + d.items.slice(0, 14).map(function (e) {
+          return "<div class='row'><span class='kind " + e.type + "'>" + ICON[e.type] + "</span><div class='t'><a href='" + esc(e.url) + "' rel='noopener'>" + esc(e.title) + "</a><small>" +
+            (e.type === "merged" ? "влит PR #" + e.number : e.type === "deploy" ? "выкачено на сайт" : "коммит " + esc(e.sha)) + " · " + esc((e.user && e.user.login) || "") + " · " + new Date(e.at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }) + "</small></div></div>";
+        }).join("") + (d.items.length > 14 ? "<div class='empty'>и ещё " + (d.items.length - 14) + "</div>" : "") + "</div></div>";
+    }).join("") : "<div class='empty'>За три недели изменений нет.</div>";
+    // идеи
+    $("ideas").innerHTML = (S.ideas || []).length ? S.ideas.slice(0, 12).map(function (i) {
+      var lab = (i.labels || []).indexOf("в работе") >= 0 ? " · в работе" : (i.labels || []).indexOf("сделано") >= 0 ? " · сделано" : "";
+      return "<div class='idea'><div class='votes'>" + i.votes + "<small>голос" + (i.votes % 10 === 1 && i.votes % 100 !== 11 ? "" : "ов") + "</small></div><div class='t'><a href='" + esc(i.url) + "' rel='noopener'>" + esc(i.title) + "</a><small>" +
+        esc(i.user && i.user.login) + " · " + i.comments + " комм." + lab + "</small></div><a class='btn' href='" + esc(i.url) + "' rel='noopener'>Голосовать</a></div>";
+    }).join("") : "<div class='card empty'>Идей пока нет — <a href='" + GH + "/discussions/new?category=ideas'>предложи первую</a>: место в Минске, машину, задание.</div>";
+    // строители
+    $("crew").innerHTML = (S.contributors || []).length ? S.contributors.slice(0, 48).map(function (c) {
+      return "<a href='https://github.com/" + esc(c.login) + "' rel='noopener' title='" + esc(c.login) + ": " + c.commits + "'><img alt='' loading='lazy' src='" + esc(c.avatar) + "&s=112'>" + esc(c.login) + "</a>";
+    }).join("") : "<div class='empty'>Здесь будут все, кто строит город. Стань первым.</div>";
+  }
+
+  function live() {
+    // что сейчас на сайте: version.txt кладёт выкладка, время — по Last-Modified
+    fetch("version.txt", { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error(r.status); var lm = r.headers.get("last-modified"); return r.text().then(function (t) { return { v: t.trim(), at: lm }; }); })
+      .then(function (x) { $("p-ver").innerHTML = "<span class='dot ok'></span>" + esc(x.v.slice(0, 7) || "—"); $("p-ver2").textContent = x.at ? "выкачено " + ago(x.at) : "версия сайта"; })
+      .catch(function () { $("p-ver").textContent = "—"; $("p-ver2").textContent = "версия недоступна"; });
+    fetch("g/health", { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (h) { $("p-on").innerHTML = "<span class='dot " + (h.ok ? "ok" : "bad") + "'></span>" + (h.online || 0); })
+      .catch(function () { $("p-on").textContent = "—"; $("p-on2").textContent = "сервер игры недоступен"; });
+  }
+  function tick() { load().then(render).catch(function () { render(null); }); live(); }
+  tick();
+  setInterval(tick, 60000);
+})();
+</script>
+</body>
+</html>

@@ -12,7 +12,7 @@
 | Движок three.js r160 (урезанная сборка) | `client/vendor/three-r160.js` | MIT | Copyright © 2010–2024 three.js authors, https://github.com/mrdoob/three.js; текст лицензии — `client/vendor/LICENSE-three.txt` |
 | Машины (параметрические модели) | `client/cars/*` | FSL-1.1-MIT (свои) | авторы проекта, генератор `tools/lib/fc-cargen.cjs` |
 | Атлас фасадов | `client/tex/facades.webp` | FSL-1.1-MIT (свой) | сгенерирован моделью изображений по текстовым описаниям, права — у авторов проекта (`client/tex/CREDITS.md`) |
-| Логотип-огонёк, иконка | `client/brand/mascot.*`, `client/brand/icon-*` | **не лицензируются** — знак проекта ([TRADEMARKS.md](TRADEMARKS.md)) | авторы проекта |
+| Логотип-огонёк; значок «Ф» (вкладка, телефон) | `client/brand/mascot.*`, `client/brand/icon-*`, `favicon-32.png`, `apple-touch-icon.png`, `client/favicon.ico` | **не лицензируются** — знак проекта ([TRADEMARKS.md](TRADEMARKS.md)) | авторы проекта |
 | Портрет Макса (рассказчик) | `client/brand/max.webp` | FSL-1.1-MIT — кадр из игры с моделью Microsoft Rocketbox (MIT, © 2020 Microsoft) | авторы проекта |
 | Картинки экрана загрузки (12 сцен × 2 ориентации: 3 Флейм-Сити, 9 Минска) | `client/loader/*.webp` | FSL-1.1-MIT (свои) | сгенерированы моделью изображений (Nano Banana Pro через kie.ai, 22.11.2026) по текстовым описаниям; узнаваемые здания Минска — общественные архитектурные объекты, без логотипов и госсимволики |
 | Карточки районов Минска для «Где начнёшь?» | `client/places/minsk/*.webp` | FSL-1.1-MIT (свои) | сгенерированы моделью изображений (Nano Banana Pro через kie.ai, 22.11.2026) по текстовым описаниям; общественные архитектурные объекты, без логотипов |

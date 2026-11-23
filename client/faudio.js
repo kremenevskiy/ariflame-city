@@ -36,7 +36,7 @@
       noiseBuf = makeNoise();
       melInit();
     }
-    if (ctx.state === "suspended") ctx.resume();
+    if (ctx.state !== "running") ctx.resume();                // iOS: и «interrupted» после сворачивания
     return ctx;
   }
   ["pointerdown", "keydown", "touchstart"].forEach(function (ev) { global.addEventListener(ev, wake, { passive: true }); });

@@ -8,7 +8,7 @@
  * Снимок: кадр рисуется заново (на телефоне — с повышенным разрешением), фильтр — цветовой матрицей, водяной знак
  * «Флейм-Сити · <место>» и адрес игры; JPEG до 900 КБ. Дальше — «В сторис» (Telegram shareToStory: кадр уходит на
  * игровой сервер POST /g/photo и живёт 48 ч), «Другу» (t.me/share), «Сохранить» (downloadFile / скачать), «Ссылка».
- * Ссылка-телепорт: Telegram — t.me/<бот>?startapp=fc_<f|m>_<x>_<z> (n — минус; бот — config.js telegramBot), сайт —
+ * Ссылка-телепорт: Telegram — t.me/<бот>?startapp=fc_<f|m>_<x>_<z>[_метка] (n — минус; метка — источник; бот — config.js telegramBot), сайт —
  * <адрес игры>?city=…&at=x,z (config.js site). При заходе по ней — перенос в точку.
  *
  * Повтор (⏪, клавиша K): кольцевой буфер последних 8 с — игрок, машины до 90 м и люди до 60 м, 15 раз в секунду (только
@@ -61,7 +61,7 @@
     var m = location.search.match(/[?&]at=(-?\d{1,6}),(-?\d{1,6})/);
     var sp = TG && TG.initDataUnsafe && TG.initDataUnsafe.start_param;
     if (m) { try { if (sp) global.sessionStorage.setItem("fc.at", sp); } catch (e) { /* без хранилища */ } return { x: +m[1], z: +m[2], src: "url" }; }
-    var s = sp && /^fc_([fm])_(n?\d{1,6})_(n?\d{1,6})$/.exec(sp);
+    var s = sp && /^fc_([fm])_(n?\d{1,6})_(n?\d{1,6})(?:_[a-z0-9]{1,24})?$/i.exec(sp);   // хвост _метка — источник (партнёр, блогер)
     if (!s) return null;
     try { if (global.sessionStorage.getItem("fc.at") === sp) return null; global.sessionStorage.setItem("fc.at", sp); } catch (e) { /* без хранилища */ }
     function dec(v) { return v[0] === "n" ? -+v.slice(1) : +v; }

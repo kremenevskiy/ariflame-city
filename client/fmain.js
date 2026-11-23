@@ -159,7 +159,10 @@
      человек сразу видит, где он (ориентир, улицы, люди), а не асфальт под ногами. Любое движение или поворот обзора —
      сразу в игру. Вернувшимся без нового района — без пролёта. */
   var intro = null, introLook = new T.Vector3();
-  function startIntro() { intro = { t: 0, dur: 2.6, from: null, fromLook: null }; }
+  function startIntro() {
+    if (global.matchMedia && global.matchMedia("(prefers-reduced-motion: reduce)").matches) return;   // просят меньше движения — без пролёта
+    intro = { t: 0, dur: 2.6, from: null, fromLook: null };
+  }
   function introStep(dt, L) {
     intro.t += dt;
     if (Math.hypot(P.vx, P.vz) > 0.5 || L.x || L.y) intro.t = Math.max(intro.t, intro.dur - 0.3);
@@ -335,7 +338,7 @@
       startIntro();
       if (FC.hud.areaCard) setTimeout(function () { FC.hud.areaCard(sa.name, (FC.places.districts.filter(function (d) { return d.id === sa.id; })[0] || {}).about); }, 1600);
     }
-    if (!FC.mobile) FC.hud.help("<b>WASD</b> — идти · клик и мышь — смотреть · <b>F</b> — машина · <b>M</b> — карта · <b>P</b> — телефон", 9);
+    if (!FC.mobile) FC.hud.help("<b>WASD</b> — идти · клик и мышь — смотреть", 8);
     else FC.hud.help("Левый палец — идти · правый — смотреть", 7);
     // подсказка гаснет, когда человек пошёл: прочитал — и не мешает
     (function () { var x0 = P.x, z0 = P.z, t1 = performance.now();

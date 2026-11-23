@@ -254,6 +254,8 @@
       a[k * 3 + 1] -= dt * fall;
       if (snow) { a[k * 3] += Math.sin(tt * 0.9 + k) * dt * 0.8; a[k * 3 + 2] += Math.cos(tt * 0.7 + k * 1.3) * dt * 0.6 + dt * 0.5; }
       if (a[k * 3 + 1] < 0) { a[k * 3 + 1] += 40; if (snow) { a[k * 3] = Math.random() * 80 - 40; a[k * 3 + 2] = Math.random() * 80 - 40; } }
+      var lx = a[k * 3], lz = a[k * 3 + 2], ly = a[k * 3 + 1];                 // камера — в (0, 10, 0) облака капель
+      if (lx * lx + lz * lz < 6.25 && ly > 7 && ly < 13) a[k * 3] += lx >= 0 ? 3 : -3;
     }
     rainGeo.attributes.position.needsUpdate = true;
   }
@@ -975,6 +977,7 @@
   var vView = new T.Vector3();
   G.inView = function (x, y, z) { vView.set(x, y, z).project(camera); return vView.z < 1 && Math.abs(vView.x) < 1.15 && Math.abs(vView.y) < 1.15; };
   G.add = add; G.frame = frame; G.resize = resize; G.setQuality = setQuality; G.weather = weather;
+  G.calm = function (sec) { nextWeatherAt = Date.now() + sec * 1000; weather.target = 0; weather.rain = 0; };
   G.mat = { facade: facadeMaterial, road: roadMaterial, water: waterMaterial, std: std, ground: function () { return groundMaterial(false); },
     groundPlane: function () { return groundMaterial(true); }, tree: treeMaterial };
   G.tex = { canvas: canvasTex, sign: signTex, glow: glowTex, blob: blobTex, shade: shade };

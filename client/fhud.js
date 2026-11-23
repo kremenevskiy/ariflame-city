@@ -41,6 +41,16 @@
   var helpUntil = 0;
   function help(html, sec) { helpEl.innerHTML = html; helpEl.classList.add("on"); helpUntil = performance.now() + (sec || 7) * 1000; }
 
+  /* ---- плашка района: крупное имя места на 3 с при входе в район (стиль — табличка-указатель и огонь) ----------------- */
+  var areaEl = el("div", "ui areacard"); hud.appendChild(areaEl);
+  var areaT = 0;
+  function areaCard(name, sub) {
+    if (!name) return;
+    areaEl.innerHTML = "<b>" + esc(name) + "</b>" + (sub ? "<span>" + esc(sub) + "</span>" : "");
+    areaEl.classList.remove("on"); void areaEl.offsetWidth; areaEl.classList.add("on");
+    clearTimeout(areaT); areaT = setTimeout(function () { areaEl.classList.remove("on"); }, 3400);
+  }
+
   /* ---- низ: цель, подсказка действия, таймер ----------------------------------------------------------------- */
   var objEl = el("div", "ui objective"); hud.appendChild(objEl);
   function objective(html) { objEl.innerHTML = html || ""; objEl.classList.toggle("on", !!html); }
@@ -102,18 +112,16 @@
     if (!l) { var d = dq.done; dq = null; dlg.classList.remove("on"); document.body.classList.remove("indlg"); FC.input.enable(true); if (d) d(); return; }
     if (typeof l === "string") l = { who: FC.MASCOT.name, text: l, face: "mascot" };
     dlg.innerHTML = "<div class='df'>" + face(l.face) + "</div><div class='dt'><b>" + esc(l.who) + "</b><p>" + esc(l.text) +
-      "</p><i>" + (FC.input.touch ? "нажми, чтобы продолжить" : "E / Enter — дальше") + "</i></div>";
+      "</p><i>" + (FC.input.touch ? "нажми, чтобы продолжить" : "E — дальше · WASD — пропустить и идти") + "</i></div>";
     dlg.classList.add("on");
     if (FC.audio) FC.audio.play("blip");
   }
   dlg.addEventListener("click", nextLine);
   global.addEventListener("keydown", function (e) {
     if (!dq) return;
-    // жмут движение, пока открыт диалог, — персонаж стоит (ввод выключен); встряхнём окно и подсветим «E / Enter», иначе
-    // кажется, что игра зависла
-    if (/^(KeyW|KeyA|KeyS|KeyD|Arrow(Up|Down|Left|Right))$/.test(e.code) && !e.repeat) {
-      dlg.classList.remove("nudge"); void dlg.offsetWidth; dlg.classList.add("nudge");
-    }
+    // жмут движение, пока открыт диалог, — значит, хотят идти: диалог закрывается (остаток реплик пропускаем), управление
+    // сразу у игрока; продолжение (шаг задания) идёт как после последней реплики
+    if (/^(KeyW|KeyA|KeyS|KeyD|Arrow(Up|Down|Left|Right))$/.test(e.code) && !e.repeat) { dq.lines.length = 0; nextLine(); return; }
     if (e.code === "KeyE" || e.code === "Enter" || e.code === "Space") { e.preventDefault(); nextLine(); }
   });
 
@@ -168,10 +176,9 @@
   function addMarker(m) {
     removeMarker(m.id);
     m.color = m.color || "#ffcf7a";
-    if (m.beam !== false) {
+    if (m.beam !== false || m.ring) {
       var g = new T.Group();
-      var beam = new T.Mesh(beamGeo, new T.MeshBasicMaterial({ color: m.color, transparent: true, opacity: 0.22, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, fog: false }));
-      g.add(beam);
+      if (m.beam !== false) g.add(new T.Mesh(beamGeo, new T.MeshBasicMaterial({ color: m.color, transparent: true, opacity: 0.22, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide, fog: false })));
       if (m.ring) {
         var ring = new T.Mesh(ringGeo, new T.MeshBasicMaterial({ color: m.color, transparent: true, opacity: 0.8, depthWrite: false }));
         ring.scale.setScalar(m.ring); ring.position.y = 0.25; g.add(ring); m.ringMesh = ring;
@@ -725,6 +732,7 @@
   // уровень подробности большой карты: 0 — весь город, 1 — район, 2 — улицы (k — пикселей на метр; Флейм-Сити меньше —
   // его пороги крупнее). Все слои спрашивают уровень здесь, а не свои числа: одна шкала на оба города.
   H.mapTier = function (k) { return M.minsk ? (k < 0.05 ? 0 : k < 0.2 ? 1 : 2) : (k < 0.2 ? 0 : k < 0.5 ? 1 : 2); };
+  H.areaCard = areaCard;
   H.openMap = openMap; H.teleport = teleport; H.addMapLayer = addMapLayer; H.pause = togglePause; H.atlasStyle = atlasStyle; H.esc = esc;
   H.inDialog = function () { return !!dq; };
   FC.hud = H;

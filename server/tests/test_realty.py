@@ -281,7 +281,9 @@ def test_raise_is_a_ratchet_and_bonus_cooldown(client):
 
 def test_low_morale_quits_and_manager_refills(client):
     opened(client)
-    s, t0 = st(), time.time()
+    # время — постоянное: уходы детерминированы по часу и сотруднику, и от «сейчас» тест зеленел или краснел по 6-часовым
+    # окнам кандидатов (3 из 8 окон — краснел). Нужен один сценарий, где уход и замена точно случаются.
+    s, t0 = st(), 1_800_000_000.0
     with s.lock:
         b = R._load_biz(s.db, "minsk", "m40_40")
     win = int(t0 // R.CAND_WINDOW)

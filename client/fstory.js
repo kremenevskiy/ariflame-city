@@ -1,6 +1,6 @@
 /* Флейм-Сити — сюжет «Огонь в каждом»: движок миссий и семь миссий.
  *
- * Уголёк — талисман и наставник (портрет face:"mascot", FC.MASCOT), «СкукаСофт» — корпорация, которая хочет погасить творческий огонь
+ * Макс — местный и наставник (портрет face:"mascot", FC.MASCOT; до 23.11 — огонёк-талисман), «СкукаСофт» — корпорация, которая хочет погасить творческий огонь
  * города (её офис — высокое офисное здание в Москве). Миссия — данные: список шагов. Шаг — {t: тип, …}:
  *   dialog {lines} · goto {at, r, text, car?} · enter {b, text} · floor {b, floor, text} · car {text, spawn?} ·
  *   pickup {text} · drive_to {at, r, text, time} · minigame {id, text} · chase {text, hits} · wanted {n} ·
@@ -526,10 +526,35 @@
   function ogo(text) { return { who: FC.MASCOT.name, text: text, face: "mascot" }; }
   function zoneB(k) { return function () { return M.zones[k] || M.hq; }; }
   function hqDoor() { return door(M.hq); }
+  // Макс стоит в кадре первых секунд: на 9 м впереди точки старта и чуть вправо, рядом — его машина (крючок: «тачка рядом,
+  // жми F»). Место проверяется: не дом, не вода, не проезжая часть — иначе пробуем левее и дальше.
+  var spotCache = null;
   function guideSpot() {
-    var s = FC.places && FC.places.spawnAt;                    // начал в выбранном районе — Уголёк встречает там
-    if (s) return { x: s.x + 6, z: s.z + 4 };
-    var p = plazaC(); return { x: p.x + 17.5, z: p.z + 4 };
+    var s = FC.places && FC.places.spawnAt;
+    if (!s) { var p = plazaC(); return { x: p.x + 17.5, z: p.z + 4 }; }
+    if (spotCache && spotCache.s === s) return spotCache.at;
+    var h = s.h != null ? s.h : 0, fx = Math.sin(h), fz = Math.cos(h), rx = Math.cos(h), rz = -Math.sin(h), at = null;
+    var tries = [[9, 3.5], [9, -3.5], [12, 4], [12, -4], [7, 2.5], [14, 0]];
+    for (var i = 0; i < tries.length && !at; i++) {
+      var x = s.x + fx * tries[i][0] + rx * tries[i][1], z = s.z + fz * tries[i][0] + rz * tries[i][1];
+      if (M.water(x, z) || (M.onRoad && M.onRoad(x, z)) || (M.buildingAt && M.buildingAt(x, z, 1.5)) || M.collide(x, z, 0.5, { noProps: true }).hit) continue;
+      at = { x: x, z: z, side: tries[i][1] >= 0 ? 1 : -1 };
+    }
+    spotCache = { s: s, at: at || { x: s.x + 6, z: s.z + 4, side: 1 } };
+    return spotCache.at;
+  }
+  var guideCar = null;
+  function placeCar(g) {
+    var s = FC.places && FC.places.spawnAt;
+    if (!s || !FC.cars || !FC.cars.spawn || guideCar) return;
+    var h = s.h != null ? s.h : 0, rx = Math.cos(h) * (g.side || 1), rz = -Math.sin(h) * (g.side || 1);
+    var T = FC.cars.TYPES, k = Object.keys(T).filter(function (n) { return /sport|coupe|muscle/i.test(n + " " + (T[n].name || "")); })[0] || "sedan";
+    for (var d = 3.2; d <= 6.5; d += 1.1) {
+      var x = g.x + rx * d, z = g.z + rz * d;
+      if (M.water(x, z) || (M.buildingAt && M.buildingAt(x, z, 2.5)) || M.collide(x, z, 2.3, { noProps: true }).hit) continue;
+      guideCar = FC.cars.spawn(k, x, z, h + Math.PI / 2, { parked: true });            // боком к камере — видно всю машину
+      return;
+    }
   }
   var MISSIONS = [
     { id: "m1", title: "С приездом", reward: 500, where: guideSpot, icon: "🧳", soft: true,
@@ -537,7 +562,7 @@
         { t: "dialog", lines: function () {
           var nm = FC.me && FC.me.label && FC.me.label !== "Гость" ? FC.me.label : "новичок";
           return [ogo("Эй, " + nm + "! С приездом — добро пожаловать " + FC.cityTo + "!"),
-            ogo("Я Уголёк. В этом городе живут агенты — у каждого человека свой. Они работают в зданиях: монтируют, снимают, пишут."),
+            ogo("Я Макс, местный. Тут у каждого человека свой ИИ-агент — они работают в зданиях: монтируют, снимают, пишут."),
             ogo("Но «СкукаСофт» хочет погасить огонь в каждом и превратить город в серую табличку. Поможешь?")]; } },
         { t: "goto", at: guideSpot, r: 5, text: "Подойди ко мне — к <b>фонтану</b> на площади", icon: "🔥" },
         { t: "dialog", lines: [ogo("Смотри: Shift — бег, пробел — прыжок, M — карта, P — телефон. На телефоне всё: задания, работа, лента города."),
@@ -616,21 +641,24 @@
   MISSIONS.forEach(function (m) { BY[m.id] = m; ORDER.push(m.id); });
   function nextId() { var d = story().done; for (var i = 0; i < ORDER.length; i++) if (d.indexOf(ORDER[i]) < 0) return ORDER[i]; return null; }
 
-  /* ---- выдача миссий: метка «★» у следующей и талисман-гид у фонтана --------------------------------------- */
+  /* ---- выдача миссий: метка «★» у следующей и Макс у своей машины рядом с точкой старта --------------------------- */
   function removeGiver() { if (FC.markers) FC.markers.remove("st-giver"); FC.interact.remove("st-giver"); }
   function placeGiver() {
     removeGiver();
     var id = nextId(); if (!id) return;
     var m = BY[id], at = m.where();
-    if (FC.markers) FC.markers.add({ id: "st-giver", x: at.x, z: at.z, color: GOLD, icon: m.icon, ring: 2.2, route: false });
+    // у Макса — только кольцо на земле (столб света на человеке выглядел как баг); дальше — как было, столб виден издалека
+    if (FC.markers) FC.markers.add({ id: "st-giver", x: at.x, z: at.z, color: GOLD, icon: m.icon, ring: id === "m1" ? 1.4 : 2.2, beam: id !== "m1", route: false });
     FC.interact.add({ id: "st-giver", x: at.x, z: at.z, r: 3, label: "Задание: «" + m.title + "»", act: function () { start(id); } });
   }
   var guide = null;
   function placeGuide() {
     var g = guideSpot();
-    guide = FC.people.make("npc", FC.people.SPECIAL.guide, g.x, g.z, { scale: 2.3 });
-    guide.update = function (ch) { ch.y = 0.35 + Math.sin(performance.now() / 500) * 0.25; };
-    FC.interact.add({ id: "st-guide", x: g.x, z: g.z, r: 3.2, label: "Поговорить с Угольком", when: function () { return !cur || cur.m.id !== "m1"; },
+    // Макс — обычный человек (модель горожанина, всегда одно лицо), смотрит на игрока; рядом его машина
+    guide = FC.people.make("npc", FC.people.SPECIAL.civ, g.x, g.z, { variant: FC.MASCOT.variant });
+    var s0 = FC.places && FC.places.spawnAt; if (s0) guide.look = { x: s0.x, z: s0.z };
+    placeCar(g);
+    FC.interact.add({ id: "st-guide", x: g.x, z: g.z, r: 3.2, label: "Поговорить с Максом", when: function () { return !cur || cur.m.id !== "m1"; },
       act: function () {
         var id = nextId();
         if (!cur && id === "m1") { start("m1"); return; }
@@ -678,9 +706,26 @@
   });
   FC.on("start", function () {
     var st = story();
-    if (FC.save.tutorial && st.done.indexOf("m1") < 0) setTimeout(function () { if (!cur) start("m1"); }, 2500);
+    // первый заход: никаких окон, которые надо прокликать (задача 23.11: «многие не понимают и уходят») — человек сразу
+    // ходит, Макс только пишет; первое задание — у него (★ рядом) или в телефоне «Задания»
+    if (FC.save.tutorial && st.done.indexOf("m1") < 0) { setTimeout(welcome, 8500); watchFirstWalk(); }   // после плашки района и подсказки управления
     else if (nextId()) setTimeout(function () { sms("С возвращением! Следующее дело — «" + BY[nextId()].title + "». Метка ★ на карте."); }, 4000);
   });
+
+  function welcome() {
+    if (cur || !FC.hud) return;
+    FC.hud.notify(FC.MASCOT.name, "Привет, это Макс! Город твой — гуляй. Тачка рядом, жми " + (FC.input.touch ? "🚗" : "F") + ". Захочешь дел — я тут же, у машины ★", "📱", 9);
+  }
+  // «обучение» (FC.save.tutorial: не восстанавливать старую точку, без случайных событий первые минуты) кончается,
+  // когда человек отошёл на 60 м или провёл в игре 3 минуты — не только после первого задания, которое теперь по желанию
+  function watchFirstWalk() {
+    var P = FC.player, x0 = P.x, z0 = P.z, t0 = performance.now();
+    (function tick() {
+      if (!FC.save.tutorial) return;
+      if (Math.hypot(P.x - x0, P.z - z0) > 60 || performance.now() - t0 > 180000) { FC.save.tutorial = false; if (FC.dirty) FC.dirty(); return; }
+      setTimeout(tick, 2000);
+    })();
+  }
 
   FC.story = {
     start: start, stop: stop, missions: MISSIONS, sms: sms, skuka: skuka, vanMesh: vanMesh, driver: driver,

@@ -379,7 +379,7 @@
   fw.rotation.x = -Math.PI / 2; fw.position.set(pcx, 1.05, pcz); root.add(fw);
   var ped = new T.Mesh(new T.CylinderGeometry(2.6, 3.2, 5, 8), G.mat.std(0x3b3632, 0.5, 0.3));
   ped.position.set(pcx, 3.5, pcz); ped.castShadow = true; root.add(ped);
-  var ogTex = new T.TextureLoader().load(FC.MASCOT.img);
+  var ogTex = new T.TextureLoader().load(FC.BRAND.logo);
   ogTex.colorSpace = T.SRGBColorSpace;
   var ogonek = new T.Mesh(new T.PlaneGeometry(11, 11), new T.MeshBasicMaterial({ map: ogTex, transparent: true, alphaTest: 0.05, side: T.DoubleSide, fog: false }));
   ogonek.position.set(pcx, 11.5, pcz); root.add(ogonek);

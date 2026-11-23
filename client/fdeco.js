@@ -216,7 +216,7 @@
     var ring = new T.Mesh(new T.TorusGeometry(Math.min(HQ.w, HQ.d) * 0.42, 0.6, 8, 48), ledMat(0xff8a3d));
     ring.rotation.x = Math.PI / 2; ring.position.set(HQ.x, HQ.h + 4, HQ.z); add(ring);
     var mast = new T.Mesh(new T.CylinderGeometry(0.6, 1.2, 26, 8), gold); mast.position.set(HQ.x, HQ.h + 13, HQ.z); add(mast);
-    var tex = new T.TextureLoader().load(FC.MASCOT.img); tex.colorSpace = T.SRGBColorSpace;
+    var tex = new T.TextureLoader().load(FC.BRAND.logo); tex.colorSpace = T.SRGBColorSpace;
     hqFire = new T.Sprite(new T.SpriteMaterial({ map: tex, transparent: true, fog: false }));
     hqFire.scale.set(22, 22, 1); hqFire.position.set(HQ.x, HQ.h + 36, HQ.z); add(hqFire);
     var halo = new T.Sprite(new T.SpriteMaterial({ map: G.tex.glow, color: 0xff9a3c, transparent: true, opacity: 0.6, blending: T.AdditiveBlending, depthWrite: false, fog: false }));

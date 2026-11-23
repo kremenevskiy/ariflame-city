@@ -151,8 +151,30 @@
       G.camera.position.x += Math.sin(t * 61) * a; G.camera.position.y += Math.sin(t * 47 + 1) * a; G.camera.position.z += Math.sin(t * 53 + 2) * a;
       cam.shakeA = Math.max(0, cam.shakeA - dt * 1.6);
     }
+    if (intro && introStep(dt, L)) return;
     G.camera.lookAt(look);
     G.focus = look;
+  }
+  /* Пролёт на старте (ресёрч «первые 5 секунд», 23.11): камера с высоты над районом опускается за спину героя за 2,6 с —
+     человек сразу видит, где он (ориентир, улицы, люди), а не асфальт под ногами. Любое движение или поворот обзора —
+     сразу в игру. Вернувшимся без нового района — без пролёта. */
+  var intro = null, introLook = new T.Vector3();
+  function startIntro() { intro = { t: 0, dur: 2.6, from: null, fromLook: null }; }
+  function introStep(dt, L) {
+    intro.t += dt;
+    if (Math.hypot(P.vx, P.vz) > 0.5 || L.x || L.y) intro.t = Math.max(intro.t, intro.dur - 0.3);
+    if (!intro.from) {
+      var sx = Math.sin(cam.yaw), sz = Math.cos(cam.yaw);
+      intro.from = new T.Vector3(P.x + sx * 90, 62, P.z + sz * 90);
+      intro.fromLook = new T.Vector3(P.x - sx * 70, 8, P.z - sz * 70);
+    }
+    var u = Math.min(1, intro.t / intro.dur), k = u * u * (3 - 2 * u);
+    G.camera.position.lerpVectors(intro.from, camPos, k);
+    introLook.lerpVectors(intro.fromLook, look, k);
+    G.camera.lookAt(introLook);
+    G.focus = look;
+    if (u >= 1) intro = null;
+    return true;
   }
 
   /* ---- пешком ----------------------------------------------------------------------------------------------- */
@@ -305,8 +327,19 @@
     })();
     FC.started = true;
     FC.emit("start", {});
-    if (!FC.mobile) FC.hud.help("Кликни по экрану, чтобы управлять мышью. <b>WASD</b> — идти, <b>Shift</b> — бег, <b>E</b> — войти, <b>F</b> — машина, <b>M</b> — карта, <b>P</b> — телефон.", 10);
-    else FC.hud.help("Левый палец — идти, правый — смотреть. ✋ — действие, 🚗 — машина.", 8);
+    // первый заход — лучший кадр: ясное солнце, без дождя; в районе — камера ниже (ориентир в кадре), пролёт и плашка района
+    if (M.minsk && FC.save.tutorial) { if (G.preset) G.preset("summer"); if (G.calm) G.calm(300); }
+    var sa = FC.places && FC.places.spawnAt;
+    if (sa) {
+      cam.pitch = 0.14; cam.want = cam.dist = narrow ? 10 : 8.5;
+      startIntro();
+      if (FC.hud.areaCard) setTimeout(function () { FC.hud.areaCard(sa.name, (FC.places.districts.filter(function (d) { return d.id === sa.id; })[0] || {}).about); }, 1600);
+    }
+    if (!FC.mobile) FC.hud.help("<b>WASD</b> — идти · клик и мышь — смотреть · <b>F</b> — машина · <b>M</b> — карта · <b>P</b> — телефон", 9);
+    else FC.hud.help("Левый палец — идти · правый — смотреть", 7);
+    // подсказка гаснет, когда человек пошёл: прочитал — и не мешает
+    (function () { var x0 = P.x, z0 = P.z, t1 = performance.now();
+      (function w() { if (performance.now() - t1 > 9000) return; if (Math.hypot(P.x - x0, P.z - z0) > 6) { setTimeout(function () { FC.hud.help("", 0.01); }, 1500); return; } setTimeout(w, 300); })(); })();
   }
   var beginQueued = false;
   FC.on("me", function (me) {

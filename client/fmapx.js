@@ -787,8 +787,10 @@
         Date.now() - t0 < 60000 || (FC.save && FC.save.tutorial && Date.now() - t0 < 240000) || (FC.inside && FC.inside.active);
       if (busy) { setTimeout(ask, 5000); return; }
       try { global.localStorage.setItem("fc.minsk.homeAsked", "1"); } catch (e) { /* приватное окно */ }
-      FC.hud.dialog([{ who: FC.MASCOT.name, face: "mascot", text: "Это настоящий Минск — дома, улицы и номера из OpenStreetMap. Хочешь найти свой дом? Телефон → «Мой дом». Адрес останется только у тебя.", face: "ogonek" }],
-        function () { FC.hud.openPhone("myhome"); });
+      // карточка, а не диалог: игра не встаёт, человек решает сам (крючок «найди свой дом» — после первой минуты)
+      var go = function () { FC.hud.openPhone("myhome"); };
+      if (FC.hud.offer) FC.hud.offer("🏠", "Найди свой дом", "Это настоящий Минск — дома и номера из OpenStreetMap. Адрес останется только у тебя.", "Найти", go, 15);
+      else FC.hud.notify(FC.MASCOT.name, "Это настоящий Минск. Найди свой дом: телефон → «Мой дом».", "🏠", 8);
     })();
   });
 

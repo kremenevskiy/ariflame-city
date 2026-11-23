@@ -150,7 +150,7 @@
     if (f >= B.floors) { info.role = "roof"; info.plan = "open"; info.title = B.type === "hq" || B.h > 100 ? "Крыша · вертолётная площадка" : "Крыша"; info.emoji = "🌇"; info.color = "#ffcf7a"; return info; }
     if (B.type === "hq") {
       if (f === 0) { info.role = "lobbyhq"; info.plan = "open"; info.title = "Лобби Флейм"; info.emoji = "🔥"; info.color = "#ff8a3d"; }
-      else if (f === top) { info.role = "boss"; info.plan = "open"; info.title = "Кабинет Уголька"; info.emoji = "🔥"; info.color = "#ffcf7a"; }
+      else if (f === top) { info.role = "boss"; info.plan = "open"; info.title = "Кабинет Макса"; info.emoji = "🔥"; info.color = "#ffcf7a"; }
       else if (f % 16 === 0) { info.role = "skylobby"; info.plan = "open"; info.title = "Небесное лобби"; info.emoji = "🌿"; info.color = "#7dffb0"; }
       else { var tm = TEAM[f % TEAM.length]; info.role = "team"; info.title = "Команда «" + tm[0] + "»"; info.emoji = tm[1]; info.color = tm[2]; info.tenant = tm; }
       return info;
@@ -821,7 +821,7 @@
     cop: ["Документы!", "Без глупостей.", "Штрафы — в окошко."],
     medic: ["Следующий!", "Не волнуйтесь, подлатаем."],
     club: ["🎵", "Огонь!", "Ещё трек!", "Какой бас!"], gym: ["Ещё подход!", "Не филонь!"],
-    hq: ["Уголёк на 64-м.", "Релиз в пятницу!", "Агенты работают 24/7.", "Новый эффект уже в цеху."]
+    hq: ["Макс на 64-м.", "Релиз в пятницу!", "Агенты работают 24/7.", "Новый эффект уже в цеху."]
   };
   function placePeople(B, f, ctx) {
     var seats = ctx.seats.slice();

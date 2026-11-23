@@ -202,6 +202,70 @@
     if (FC.humans && FC.humans.ready && R.chance(0.12)) group(ch);
     return ch;
   }
+  /* ---- гуляющие у ориентиров: на бульварах и площадях нет «кварталов» с тротуаром — прохожие туда не заходили, и место
+   * старта выглядело пустым (23.11: «на Маяке на бульваре нет людей»). Якорь {x, z, r, n}: гуляющие ходят от точки к точке
+   * в круге r (мимо домов, воды и проезжей части), стоят, смотрят по сторонам, кто-то в телефоне. Подходишь к якорю —
+   * народ добирается (не на глазах: в кадре — только при старте и после перемещения, когда экран закрыт). */
+  var anchors = [];
+  function strollPoint(A, near) {
+    for (var k = 0; k < 14; k++) {
+      var a = R.range(0, 6.283), d = Math.sqrt(R()) * (near ? Math.min(14, A.r) : A.r);
+      var x = (near ? near.x : A.x) + Math.cos(a) * d, z = (near ? near.z : A.z) + Math.sin(a) * d;
+      if (FC.dist2(x, z, A.x, A.z) > A.r * A.r || M.water(x, z) || M.onRoad(x, z) || M.buildingAt(x, z, 1.5)) continue;
+      if (M.collide(x, z, 0.45, { noProps: true }).hit) continue;
+      return { x: x, z: z };
+    }
+    return null;
+  }
+  function strollBrain(ch, dt) {
+    if (ch.flee > 0 || ch.group) return false;                     // паника и драка — как у всех прохожих
+    var A = ch.anchor;
+    if (ch.wait > 0) { ch.wait -= dt; ch.vx = ch.vz = 0; ch.speed = 0; return true; }
+    if (!ch.goal2 || FC.dist2(ch.x, ch.z, ch.goal2.x, ch.goal2.z) < 1.5) {
+      ch.goal2 = strollPoint(A, R.chance(0.6) ? ch : null);
+      if (R.chance(0.35)) { ch.wait = R.range(2, 9); return true; }   // постоять: посмотреть, позвонить
+      if (!ch.goal2) { ch.wait = 3; return true; }
+    }
+    var dx = ch.goal2.x - ch.x, dz = ch.goal2.z - ch.z, dl = Math.hypot(dx, dz) || 1, v = ch.walk;
+    var c = M.collide(ch.x + dx / dl * v * dt, ch.z + dz / dl * v * dt, 0.35, { prev: ch });
+    if (c.hit) ch.goal2 = null;
+    ch.vx = (c.x - ch.x) / dt; ch.vz = (c.z - ch.z) / dt; ch.x = c.x; ch.z = c.z; ch.speed = v;
+    return true;
+  }
+  function strollAdd(A, inView) {
+    var at = strollPoint(A); if (!at) return null;
+    if (!inView && G.inView && G.inView(at.x, 1, at.z)) return null;
+    var ch = make("ped", randomCell(R), at.x, at.z, { walk: R.range(1.0, 1.45) });
+    ch.anchor = A; ch.brain = strollBrain; ch.wait = R.chance(0.4) ? R.range(0, 6) : 0;
+    if (R.chance(0.3)) ch.phone = true;
+    peds.push(ch);
+    return ch;
+  }
+  function stroll(x, z, r, n) {
+    var A = { x: x, z: z, r: r || 45, n: n || 14 };
+    anchors.push(A);
+    return A;
+  }
+  function strollTick(px, pz, fillP) {
+    for (var i = 0; i < anchors.length; i++) {
+      var A = anchors[i], d2 = FC.dist2(px, pz, A.x, A.z);
+      if (d2 > 220 * 220) continue;
+      var have = 0;
+      for (var k = 0; k < peds.length; k++) if (peds[k].anchor === A) have++;
+      for (var j = 0; j < Math.min(fillP ? A.n : 1, A.n - have); j++) strollAdd(A, fillP);
+    }
+  }
+
+  // якоря — у каждого района старта (FC.places): толпа чуть впереди точки, туда, куда смотрит камера
+  FC.on("start", function () {
+    var ds = (FC.places && FC.places.districts) || [], n = G.Q.level === "low" ? 7 : 12;
+    ds.forEach(function (d) {
+      if (d.x == null) return;
+      var h = d.h != null ? d.h * Math.PI / 180 : 0;
+      stroll(d.x + Math.sin(h) * 22, d.z + Math.cos(h) * 22, 42, n);
+    });
+  });
+
   /* Кружок болтающих: 2–3 человека стоят лицом друг к другу, говорят по очереди (клипы talk/listen, иногда смех),
      через 20–70 с расходятся по своим делам. */
   function group(first) {
@@ -530,6 +594,7 @@
         var want = Math.round(G.Q.peds * (FC.humans && FC.humans.ready ? DENS[G.Q.level] || 1 : 1)), gap = want - peds.length;
         var fillP = performance.now() < (FC.fillUntil || 0) || !FC.started;   // старт, перемещение — можно и рядом (экран закрыт)
         for (var sp = 0; sp < Math.min(8, Math.ceil(gap / 10)); sp++) spawnPed(px, pz, fillP);
+        strollTick(px, pz, fillP);
       }
       for (var i = peds.length - 1; i >= 0; i--) {
         var ch = peds[i];
@@ -630,7 +695,7 @@
   }
 
   FC.people = {
-    all: all, peds: peds, agents: agents, make: make, remove: remove, spawnPed: spawnPed, hit: hit, panic: panic, say: say,
+    all: all, peds: peds, agents: agents, make: make, remove: remove, spawnPed: spawnPed, stroll: stroll, hit: hit, panic: panic, say: say,
     witnesses: witnesses, near: near, insideOf: insideOf, punch: punch, group: group, setCitizens: setCitizens, applyGoal: applyGoal, cellOf: cellOf, randomCell: randomCell,
     SPECIAL: SPECIAL, CODES: CODES, ICON: ICON, line: agentLine
   };

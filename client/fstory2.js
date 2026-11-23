@@ -1,8 +1,8 @@
 /* Флейм-Сити — жизнь города вокруг сюжета: случайные события, «Лента» (соцсеть города в духе GTA 6 — посты
- * очевидцев о твоих проделках), «Сообщения» (смс Уголька), репутация, новости для радио (FC.story.newsLine).
+ * очевидцев о твоих проделках), «Сообщения» (смс Макса), репутация, новости для радио (FC.story.newsLine).
  *
  * События — раз в ~3 минуты рядом с игроком, когда нет задания: вор сумки, заглохшая машина, уличная гонка,
- * свадебный кортеж, потерянный кошелёк, блогер просит снять, «живой эфир» агента в здании-зоне, искры Уголька.
+ * свадебный кортеж, потерянный кошелёк, блогер просит снять, «живой эфир» агента в здании-зоне, искры у Макса.
  */
 (function (global) {
   "use strict";
@@ -140,7 +140,7 @@
     render: function (b) {
       var l = (flags().sms || []).slice().reverse();
       b.innerHTML = "<div class='list'>" + (l.length ? l.map(function (m) {
-        return "<div class='card'><b>" + (m.from === FC.MASCOT.name ? "🔥 " : "💬 ") + esc(m.from) + "</b><p>" + esc(m.text) + "</p><small class='quiet'>" + ago(m.t) + "</small></div>";
+        return "<div class='card'><b>" + (m.from === FC.MASCOT.name ? "📱 " : "💬 ") + esc(m.from) + "</b><p>" + esc(m.text) + "</p><small class='quiet'>" + ago(m.t) + "</small></div>";
       }).join("") : "<div class='card'><p>Сообщений пока нет.</p></div>") + "</div>";
     } });
 
@@ -158,6 +158,7 @@
     el.querySelector(".no").addEventListener("click", kill);
     setTimeout(kill, (sec || 12) * 1000);
   }
+  if (FC.hud) FC.hud.offer = offer;                    // карточка-предложение без паузы игры — для всех модулей (fmapx: «Найди свой дом»)
 
   /* ---- случайные события ----------------------------------------------------------------------------------- */
   var ev = null, evT = 75;
@@ -365,7 +366,7 @@
         e.cleanup.push((function (ss) { return function () { G.scene.remove(ss); }; })(s));
       }
       if (!items.length) return false;
-      FC.hud.notify(FC.MASCOT.name, "Я рассыпал искры рядом с тобой — собери, пока не погасли! ✨", "🔥", 5);
+      FC.hud.notify(FC.MASCOT.name, "Глянь, рядом рассыпались искры — собери, пока не погасли! ✨", "📱", 5);
       e.t = 60;
       e.update = function (dt) {
         e.t -= dt;

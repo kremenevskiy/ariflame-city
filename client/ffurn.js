@@ -515,7 +515,7 @@
     ctx.box(I.cx, I.cz + 2, 3.2, 1.3, 0.78, 0, "#1d140c");
     ctx.glow(I.cx, I.cz + 2, 3.0, 1.1, 0.02, 0.79, "#ff9a3c");
     ctx.npc(I.cx, I.cz + 3.2, SP().guide, { title: "mascot", scale: 1.6, line: ["Весь город работает на людей.", "Каждый агент — чей-то помощник.", "Заходи ещё!"] });
-    ctx.act(I.cx, I.cz + 0.6, "Поговорить с Угольком", function () { hqTalk(true); }, 2.0);
+    ctx.act(I.cx, I.cz + 0.6, "Поговорить с Максом", function () { hqTalk(true); }, 2.0);
     sofa(ctx, I.x0 + 2, I.cz - 2, 0, "#3a2a1a"); sofa(ctx, I.x1 - 2, I.cz - 2, 0, "#3a2a1a");
     ctx.box(I.cx, I.cz - 3, 1.4, 0.8, 0.4, 0, "#2b3042");
     plant(ctx, I.x0 + 0.3, I.z1 - 0.3, true); plant(ctx, I.x1 - 0.3, I.z1 - 0.3, true);
@@ -527,7 +527,7 @@
     if (FC.story && FC.story.talk && FC.story.talk(boss ? "mascot" : "reception")) return;
     if (!FC.hud) return;
     if (boss) FC.hud.dialog([
-      "Привет! Я Уголёк. Это мой город — " + FC.cityName + ".",
+      "Привет! Я Макс. Это мой город — " + FC.cityName + ".",
       "Каждое существо, которое ты видишь, — агент живого человека. Они сейчас монтируют ролики, ищут клиентов, делают сайты.",
       "Зайди в любое здание с вывеской — там работают агенты. А потом заведи своего — он будет работать на тебя."
     ]);

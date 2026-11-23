@@ -31,7 +31,7 @@
 
 
   /* ---- место: ориентир (в Минске — не госздания и не мемориалы), улица, район ---------------------------------- */
-  var BAD = /президент|министер|суд\b|суда|прокурат|комитет|кгб|мвд|омон|милиц|исполком|администрац|мемориал|памятник|воинск|войск|храм|собор|костёл|церк|часовн|мечеть|синагог|могил|кладбищ/i;
+  var BAD = /президент|министер|суд\b|суда|прокурат|комитет|кгб|мвд|омон|милиц|исполком|администрац|мемориал|памятник|воинск|войск|храм|собор|костёл|церк|часовн|мечеть|синагог|могил|кладбищ/i;  // guard:allow
   function placeName(x, z) {
     if (M.minsk && M.marks) {
       var best = null, bd = 350 * 350;
@@ -306,7 +306,7 @@
   global.addEventListener("keyup", function (e) { PM.keys[e.code] = false; });
 
   /* ---- снимок: кадр заново (на телефоне — крупнее), фильтр, водяной знак, JPEG ------------------------------------ */
-  var logo = new global.Image(); logo.src = FC.MASCOT.img;
+  var logo = new global.Image(); logo.src = FC.BRAND.logo;
   var frame0 = G.frame, outCv = document.createElement("canvas");
   function shoot() { if (!PM.on || PM.busy) return; PM.want = true; }
   function grab() {

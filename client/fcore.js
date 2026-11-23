@@ -64,7 +64,7 @@
   function fresh() {
     return { v: SAVE_VER, money: 500, bank: 0, story: { done: [], step: 0 }, biz: {}, garage: [], carColor: null,
       stats: { jobs: 0, earned: 0, busted: 0, wasted: 0, crimes: 0, km: 0, playMin: 0 }, flags: {}, pos: null,
-      hp: 100, hour: 9, tutorial: true };
+      hp: 100, hour: 15, tutorial: true };
   }
   var save = fresh();
   /* Город (index.html: FC_CITY): деньги, гараж, сюжет — общие; место, дома, мебель и районы банд — у каждого города свои.
@@ -172,7 +172,10 @@
     musicBase: C.musicBase || "music/",
     places: Array.isArray(C.places) ? C.places : C.places ? [C.places] : []   // пакеты мест развёртывания (fplaces.js)
   };
-  FC.MASCOT = { name: "Уголёк", img: "brand/mascot.png" };      // талисман: портрет в диалогах, фигурка, логотип
+  // рассказчик — Макс, местный (23.11: мультяшный огонёк-гид убран — «не похоже на игру»): портрет в диалогах и сообщениях;
+  // огонёк остаётся только логотипом бренда — вывески, билборды, водяной знак снимков
+  FC.MASCOT = { name: "Макс", img: "brand/max.webp", variant: "m20" };
+  FC.BRAND = { logo: "brand/mascot.png" };
   // Игровой сервер (server/): ?gs=http://host:port — HTTP для разработки; ?mp=ws://host:port/g/ws | off — сокет;
   // иначе FC_CONFIG.server ("" — тот же адрес, что у страницы; "off" — одиночная игра).
   function qp(k) { var m = location.search.match(new RegExp("[?&]" + k + "=([^&]+)")); return m ? decodeURIComponent(m[1]) : null; }

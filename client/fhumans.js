@@ -451,7 +451,8 @@
     var seed = ch.kind === "player" ? FC.hash((FC.me && FC.me.rid) || "guest", 3) : FC.hash(ch.id || "x", 7);
     var r = FC.rng(seed);
     if (role === "office") { var off = ofRole("office"); if (off && r() < 0.6) list = off; }
-    if (ch.kind === "player" && FC.save && FC.save.look && VARS[FC.save.look]) list = [VARS[FC.save.look]];
+    if (ch.variant && VARS[ch.variant]) list = [VARS[ch.variant]];          // свой облик (Макс — всегда одно лицо)
+    else if (ch.kind === "player" && FC.save && FC.save.look && VARS[FC.save.look]) list = [VARS[FC.save.look]];
     else if (ch.kind === "player") { var young = list.filter(function (v) { return !v.old; }); if (young.length) list = young; }
     var v = pickR(r, list), g = v.g, I = SK[g].info;
     if (ch.kind === "player" && FC.save && !FC.save.look) { FC.save.look = v.id; FC.dirty(); }   // облик игрока не меняется от захода к заходу

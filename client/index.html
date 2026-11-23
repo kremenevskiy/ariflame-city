@@ -48,6 +48,7 @@ button{font:inherit;color:inherit}
 /* подсказки */
 .help{position:fixed;left:14px;top:calc(12px + var(--safe-t));max-width:340px;background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:10px 13px;font-size:13px;opacity:0;transform:translateY(-8px);transition:.3s;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .help.on{opacity:1;transform:none}.help b{color:var(--gold)}
+.areacard{position:fixed;right:28px;bottom:calc(112px + var(--safe-b));text-align:right;pointer-events:none;opacity:0;transform:translateX(24px);transition:opacity .45s ease,transform .45s ease;z-index:6}.areacard.on{opacity:1;transform:none}.areacard b{display:block;font:600 46px/1 Oswald,"Arial Narrow",system-ui,sans-serif;text-transform:uppercase;letter-spacing:.02em;color:#fff3df;text-shadow:0 3px 0 rgba(0,0,0,.45),0 0 26px rgba(255,140,40,.55)}.areacard span{display:inline-block;margin-top:6px;padding:3px 9px;border-radius:5px;background:#0d56a3;color:#fff;font:600 13px/1.3 system-ui,sans-serif;box-shadow:0 2px 0 rgba(0,0,0,.3)}body.touch .areacard{right:auto;left:50%;bottom:auto;top:38%;text-align:center;transform:translate(-50%,-10px)}body.touch .areacard.on{transform:translate(-50%,0)}body.touch .areacard b{font-size:32px}
 .objective{position:fixed;left:50%;bottom:calc(26px + var(--safe-b));transform:translateX(-50%);max-width:min(640px,90vw);text-align:center;font:600 16px/1.3 system-ui;text-shadow:0 2px 8px #000,0 0 2px #000;opacity:0;transition:.3s}
 .objective.on{opacity:1}.objective b{color:var(--gold)}.objective em{font-style:normal;color:#6bd5ff}
 .prompt{position:fixed;left:50%;bottom:calc(64px + var(--safe-b));transform:translateX(-50%);background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:7px 14px;font:600 14px system-ui;opacity:0;transition:opacity .15s;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
@@ -69,8 +70,6 @@ kbd{display:inline-block;min-width:22px;padding:1px 6px;border-radius:6px;backgr
 @keyframes slide{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
 /* диалог */
 .dlg{position:fixed;left:50%;bottom:calc(18px + var(--safe-b));transform:translate(-50%,20px);width:min(620px,94vw);display:flex;gap:12px;align-items:flex-start;background:rgba(14,18,36,.94);border:1px solid var(--line);border-radius:18px;padding:12px 14px;opacity:0;transition:.25s;pointer-events:none!important;cursor:pointer;z-index:6}
-.dlg.nudge{animation:dlgnudge .4s}.dlg.nudge .dt i{color:#ffcf7a;font-weight:700}
-@keyframes dlgnudge{0%,100%{translate:0}20%{translate:-7px}40%{translate:7px}60%{translate:-4px}80%{translate:4px}}
 .dlg.on{opacity:1;transform:translate(-50%,0);pointer-events:auto!important}
 .df{width:64px;height:64px;flex:none;border-radius:14px;background:radial-gradient(circle at 50% 60%,#4a3a6a,#151a30);display:grid;place-items:center;overflow:hidden}
 .df img{width:58px;height:58px;object-fit:contain}.df .fc{display:block;width:60px;height:60px}.df .fe{font-size:36px}
@@ -144,7 +143,7 @@ body.touch .timer{top:calc(132px + var(--safe-t))}body.touch .notes{top:calc(172
 /* телефон (слово владельца 22.11: «карту снизу убери, там джойстик»): миникарта — в левый верхний угол, меньше;
    в левом нижнем — база джойстика (видна в покое, при касании прыгает под палец) */
 body.touch .miniwrap{width:104px;left:10px;top:calc(10px + var(--safe-t));bottom:auto}body.touch .minimap{width:104px;height:104px}
-body.touch .help{left:124px}
+body.touch .help{left:50%;right:auto;top:calc(172px + var(--safe-t));transform:translate(-50%,-8px);max-width:min(320px,86vw);text-align:center;white-space:nowrap}body.touch .help.on{transform:translate(-50%,0)}
 .stick.rest{opacity:.42;left:22px;bottom:calc(22px + var(--safe-b));top:auto}
 .stick.rest .knob{opacity:.8}
 body.touch .objective{bottom:calc(250px + var(--safe-b));font-size:14px}

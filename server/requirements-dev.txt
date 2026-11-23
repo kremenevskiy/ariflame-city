@@ -1,0 +1,4 @@
+# Тесты сервера (npm test / python -m pytest server/tests -q)
+pytest>=8,<10
+# необязательно: один тест кадров фоторежима проверяет WebP через Pillow (без него — пропуск)
+# Pillow>=10

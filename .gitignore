@@ -1,0 +1,24 @@
+# зависимости и сборка
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+# данные игрового сервера (SQLite, кадры фоторежима, ключ админ-ручки)
+server/data/
+*.db
+*.db-wal
+*.db-shm
+admin.key
+photos/
+# локальные настройки и мусор
+.env
+.env.*
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# пакеты мест развёртывания (партнёрские логотипы и названия) — не в репозиторий; для проверки локально: ?places=places/partners/minsk.json
+client/places/partners/

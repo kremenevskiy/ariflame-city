@@ -1,0 +1,5 @@
+# Игровой сервер Флейм-Сити: FastAPI + uvicorn (WebSocket — через websockets), httpx — вебхук личности (FC_WORLD).
+fastapi>=0.110,<1
+uvicorn>=0.29,<1
+websockets>=12,<18
+httpx>=0.27,<1

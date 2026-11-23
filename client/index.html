@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Флейм-Сити — открытый 3D-город в браузере</title>
+<meta name="description" content="Открытый 3D-город в браузере: машины, вертолёты, работа и бизнес, сюжет и онлайн с другими игроками — во Флейм-Сити и в «Минске 1:1» по данным OpenStreetMap.">
+<meta property="og:title" content="Флейм-Сити — открытый 3D-город">
+<meta property="og:description" content="Живой 3D-город в браузере: машины, работа, бизнес, сюжет и онлайн.">
+<meta name="theme-color" content="#0b1024">
+<link rel="icon" href="brand/icon-192.png">
+<style>
+:root{--ink:#f6efe2;--gold:#ffcf7a;--glass:rgba(12,16,32,.74);--line:rgba(255,207,122,.3);--ok:#7dffb0;--bad:#ff6b7a;--safe-t:max(env(safe-area-inset-top),calc(var(--tg-safe-area-inset-top,0px) + var(--tg-content-safe-area-inset-top,0px)));--safe-b:max(env(safe-area-inset-bottom),var(--tg-safe-area-inset-bottom,0px))}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;position:fixed;inset:0;width:100%;background:#0b1024;color:var(--ink);font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;-webkit-user-select:none;user-select:none;touch-action:none}
+#cv{position:fixed;inset:0;width:100%;height:100%;display:block;outline:none}
+#bubbles,#hud{position:fixed;inset:0;pointer-events:none}
+#hud{z-index:5}
+body.indlg #pad,body.indlg .corner{visibility:hidden}
+#hud .ui,#hud .dlg,#hud .phone,#hud .bigmap,#hud .pause{pointer-events:auto}
+#hud .topr,#hud .help,#hud .objective,#hud .prompt,#hud .timer,#hud .toasts,#hud .notes{pointer-events:none}
+button{font:inherit;color:inherit}
+/* пузыри над головой */
+.say{position:absolute;left:0;top:0;max-width:220px;padding:6px 10px;background:#fffaf0;color:#2a2233;font:600 12.5px/1.3 system-ui;border-radius:13px;box-shadow:0 4px 14px rgba(0,0,0,.35);will-change:transform;white-space:normal;text-align:center;animation:pop .2s ease-out}
+.say:after{content:"";position:absolute;left:50%;bottom:-6px;margin-left:-6px;border:6px solid transparent;border-bottom:0;border-top-color:#fffaf0}
+.say.busy{background:#e9fff2;color:#0c3a22}.say.busy:after{border-top-color:#e9fff2}
+.say.cop{background:#dfe9ff;color:#0d2257}.say.cop:after{border-top-color:#dfe9ff}
+.say.me{background:linear-gradient(90deg,#ffcf7a,#ff9b4a);color:#2a1205}.say.me:after{border-top-color:#ff9b4a}
+@keyframes pop{from{opacity:0;scale:.6}to{opacity:1;scale:1}}
+/* верх справа: деньги, розыск, часы */
+.topr{position:fixed;right:14px;top:calc(12px + var(--safe-t));text-align:right;text-shadow:0 2px 6px rgba(0,0,0,.7)}
+.money{font:800 26px/1 system-ui;color:#9dffbf;letter-spacing:.02em}
+.mdelta{font:700 15px system-ui;opacity:0;transform:translateY(-4px);transition:.3s;height:18px}
+.mdelta.show{opacity:1;transform:none}.mdelta.plus{color:#9dffbf}.mdelta.minus{color:var(--bad)}
+.stars{font-size:24px;letter-spacing:2px;min-height:4px}
+.stars i{font-style:normal;color:rgba(255,255,255,.18)}.stars i.on{color:#fff;text-shadow:0 0 10px #6bb8ff,0 2px 4px #000}
+.stars i.hollow{color:transparent;-webkit-text-stroke:1.5px #fff}
+.stars.flash i.on{animation:sflash .5s steps(2) infinite}
+@keyframes sflash{50%{color:#ff5d6c;text-shadow:0 0 12px #ff5d6c}}
+.clock{font:700 14px system-ui;color:rgba(255,245,230,.85);margin-top:2px}
+/* миникарта */
+.miniwrap{position:fixed;left:14px;bottom:calc(14px + var(--safe-b));width:170px;cursor:pointer}
+.minimap{display:block;width:170px;height:170px;border-radius:50%;border:2px solid var(--line);box-shadow:0 6px 24px rgba(0,0,0,.5);background:#0b1020}
+.hpbar{height:7px;margin:7px 12px 0;background:rgba(0,0,0,.5);border-radius:4px;overflow:hidden;border:1px solid rgba(255,255,255,.15)}
+.hpbar i{display:block;height:100%;width:100%;background:linear-gradient(90deg,#3fd98b,#8dffbf);transition:width .3s}
+.hpbar.low i{background:linear-gradient(90deg,#ff4d6d,#ff8a8a);animation:sflash 1s infinite}
+.zonename{text-align:center;font:700 12px Georgia,serif;letter-spacing:.12em;text-transform:uppercase;color:rgba(255,240,215,.85);margin-top:4px;text-shadow:0 2px 5px #000}
+/* подсказки */
+.help{position:fixed;left:14px;top:calc(12px + var(--safe-t));max-width:340px;background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:10px 13px;font-size:13px;opacity:0;transform:translateY(-8px);transition:.3s;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+.help.on{opacity:1;transform:none}.help b{color:var(--gold)}
+.objective{position:fixed;left:50%;bottom:calc(26px + var(--safe-b));transform:translateX(-50%);max-width:min(640px,90vw);text-align:center;font:600 16px/1.3 system-ui;text-shadow:0 2px 8px #000,0 0 2px #000;opacity:0;transition:.3s}
+.objective.on{opacity:1}.objective b{color:var(--gold)}.objective em{font-style:normal;color:#6bd5ff}
+.prompt{position:fixed;left:50%;bottom:calc(64px + var(--safe-b));transform:translateX(-50%);background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:7px 14px;font:600 14px system-ui;opacity:0;transition:opacity .15s;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.prompt.on{opacity:1}
+kbd{display:inline-block;min-width:22px;padding:1px 6px;border-radius:6px;background:var(--gold);color:#2a1205;font:800 13px system-ui;text-align:center}
+.timer{position:fixed;right:14px;top:calc(120px + var(--safe-t));font:800 24px system-ui;color:#fff;text-shadow:0 2px 8px #000;opacity:0}
+.timer.on{opacity:1}.timer.hurry{color:var(--bad)}
+.toasts{position:fixed;left:50%;top:calc(14px + var(--safe-t));transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:6px}
+.toast{background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:8px 14px;font-weight:600;animation:pop .25s;transition:opacity .4s,transform .4s;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.toast.ok{border-color:rgba(125,255,176,.5)}.toast.bad{border-color:rgba(255,107,122,.6)}.toast.bye{opacity:0;transform:translateY(-8px)}
+.big{position:fixed;left:0;right:0;top:34%;text-align:center;opacity:0;pointer-events:none}
+.big.on{animation:bigin 3.2s ease forwards}
+.big b{display:block;font:800 italic clamp(34px,7vw,64px)/1 Georgia,serif;letter-spacing:.04em;text-shadow:0 4px 0 rgba(0,0,0,.55),0 0 30px rgba(0,0,0,.5)}
+.big span{display:inline-block;margin-top:10px;background:rgba(0,0,0,.55);padding:6px 14px;border-radius:10px;font:600 16px system-ui}
+@keyframes bigin{0%{opacity:0;transform:scale(1.4)}10%{opacity:1;transform:scale(1)}85%{opacity:1}100%{opacity:0}}
+.notes{position:fixed;right:14px;top:calc(150px + var(--safe-t));width:min(300px,70vw);display:flex;flex-direction:column;gap:6px}
+.note{display:flex;gap:10px;background:rgba(245,247,255,.96);color:#14182a;border-radius:14px;padding:9px 11px;box-shadow:0 8px 24px rgba(0,0,0,.35);animation:slide .3s ease-out;transition:.4s}
+.note .ni{font-size:24px}.note b{font-size:12px}.note p{margin:1px 0 0;font-size:13px}.note.bye{opacity:0;transform:translateX(20px)}
+@keyframes slide{from{opacity:0;transform:translateX(30px)}to{opacity:1;transform:none}}
+/* диалог */
+.dlg{position:fixed;left:50%;bottom:calc(18px + var(--safe-b));transform:translate(-50%,20px);width:min(620px,94vw);display:flex;gap:12px;align-items:flex-start;background:rgba(14,18,36,.94);border:1px solid var(--line);border-radius:18px;padding:12px 14px;opacity:0;transition:.25s;pointer-events:none!important;cursor:pointer;z-index:6}
+.dlg.nudge{animation:dlgnudge .4s}.dlg.nudge .dt i{color:#ffcf7a;font-weight:700}
+@keyframes dlgnudge{0%,100%{translate:0}20%{translate:-7px}40%{translate:7px}60%{translate:-4px}80%{translate:4px}}
+.dlg.on{opacity:1;transform:translate(-50%,0);pointer-events:auto!important}
+.df{width:64px;height:64px;flex:none;border-radius:14px;background:radial-gradient(circle at 50% 60%,#4a3a6a,#151a30);display:grid;place-items:center;overflow:hidden}
+.df img{width:58px;height:58px;object-fit:contain}.df .fc{display:block;width:60px;height:60px}.df .fe{font-size:36px}
+.dt b{color:var(--gold);font-size:13px;letter-spacing:.04em}.dt p{margin:3px 0 4px;font-size:15px;line-height:1.4}.dt i{font-size:11px;color:rgba(255,255,255,.45)}
+/* телефон */
+.phone{position:fixed;right:18px;bottom:calc(18px + var(--safe-b));width:300px;height:min(560px,82vh);background:#0d0f17;border:3px solid #2b2f3d;border-radius:36px;padding:12px 10px 46px;box-shadow:0 20px 60px rgba(0,0,0,.6);transform:translateY(120%);transition:transform .35s cubic-bezier(.2,.9,.3,1.1);z-index:7}
+.phone.on{transform:none}
+.pscreen{height:100%;border-radius:26px;overflow:hidden;background:linear-gradient(160deg,#1c2347,#3a1f3f 60%,#4a2a1f);display:flex;flex-direction:column}
+.pbar{display:flex;justify-content:space-between;padding:8px 14px 4px;font:700 12px system-ui;color:rgba(255,255,255,.85)}
+.pbody{flex:1;overflow:auto;padding:6px 10px 10px}
+.apps{display:grid;grid-template-columns:repeat(3,1fr);gap:14px 6px;padding:12px 4px}
+.app{background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:5px;cursor:pointer;position:relative;padding:0}
+.app span{width:56px;height:56px;border-radius:16px;display:grid;place-items:center;font-size:28px;box-shadow:0 4px 12px rgba(0,0,0,.35)}
+.app i{font-style:normal;font-size:11px;color:#fff}
+.app em{position:absolute;top:-4px;right:10px;background:#ff3b5c;color:#fff;font:700 11px system-ui;border-radius:10px;padding:1px 6px;font-style:normal}
+.phome{position:absolute;left:50%;bottom:8px;transform:translateX(-50%);width:42px;height:30px;border-radius:14px;border:1px solid #3a3f50;background:#181b26;color:#aab;cursor:pointer}
+.apphead{display:flex;align-items:center;gap:6px;padding:6px 0 8px;position:sticky;top:0;background:inherit}
+.apphead .back{background:none;border:0;font-size:26px;line-height:1;cursor:pointer;padding:0 6px}
+.appbody .list{display:flex;flex-direction:column;gap:8px}
+.appbody .row,.appbody .card{background:rgba(255,255,255,.08);border-radius:14px;padding:10px 12px}
+.appbody .row{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.appbody .card b{display:block}.appbody .card p,.quiet{margin:3px 0 0;font-size:12px;color:rgba(255,255,255,.65)}
+.appbody button,.appbody select{background:var(--gold);color:#2a1205;border:0;border-radius:10px;padding:6px 10px;font-weight:700;cursor:pointer}
+.appbody button.ghost{background:rgba(255,255,255,.12);color:#fff}.appbody button.danger{background:#ff5d6c;color:#fff}
+.appbody button:disabled{opacity:.4;cursor:default}
+/* большая карта */
+.bigmap{position:fixed;inset:0;background:#0b1020;opacity:0;pointer-events:none!important;transition:opacity .2s;z-index:8}
+.bigmap.on{opacity:1;pointer-events:auto!important}
+.bigmap canvas{position:absolute;inset:0;width:100%;height:100%;touch-action:none;cursor:grab}
+.bmbar{position:absolute;left:12px;right:12px;top:calc(10px + var(--safe-t));display:flex;align-items:center;gap:10px;background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:8px 12px}
+.bmbar span{color:rgba(255,255,255,.6);font-size:12px;flex:1}.bmbar .x{background:none;border:0;font-size:20px;cursor:pointer}
+.legend{position:absolute;left:12px;bottom:calc(12px + var(--safe-b));display:flex;flex-wrap:wrap;gap:6px}
+.legend span{background:var(--glass);border-radius:10px;padding:4px 8px;font-size:12px}
+.legend .lgo{background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:7px 11px;font:600 13px system-ui;color:var(--ink);cursor:pointer}
+.legend{max-height:40vh;overflow-y:auto;right:12px}.legend .lq{border-color:var(--gold);color:#fff}
+.legend .lgo.pl{border-color:rgba(107,213,255,.5)}.legend .lpl{display:contents}
+.msheet{position:absolute;z-index:3;width:220px;background:rgba(14,18,36,.96);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+.msheet b{font:700 14px Georgia,serif;color:#fff;padding:2px 2px 4px}
+.msheet button{background:rgba(255,255,255,.08);border:0;border-radius:10px;padding:9px 10px;text-align:left;font:600 13px system-ui;color:var(--ink);cursor:pointer}
+body.warp #cv{filter:brightness(1.8) blur(3px);transition:filter .25s}
+/* пауза */
+.pause{position:fixed;inset:0;background:rgba(5,8,18,.6);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:9}
+.pause.on{display:flex}
+.pcard{width:min(380px,90vw);background:rgba(14,18,36,.95);border:1px solid var(--line);border-radius:22px;padding:20px;text-align:center}
+.pcard h2{margin:0;font:700 26px Georgia,serif;color:#fff}.pcard p{margin:4px 0 12px;color:rgba(255,245,230,.7)}
+.nums{display:flex;gap:8px;margin:6px 0 14px}.nums div{flex:1;background:rgba(255,255,255,.06);border-radius:12px;padding:8px;font-size:11px;color:rgba(255,245,230,.65)}.nums b{display:block;font:700 18px system-ui;color:#fff}
+.main,.sec{display:block;width:100%;border-radius:14px;padding:12px;font:700 15px system-ui;cursor:pointer;text-decoration:none;text-align:center}
+.main{border:0;background:linear-gradient(90deg,#ffcf7a,#ff9b4a);color:#2a1205}
+.sec{margin-top:8px;border:1px solid var(--line);background:transparent;color:var(--ink)}
+/* угловые кнопки */
+.corner{position:fixed;right:14px;bottom:calc(14px + var(--safe-b));display:flex;gap:8px}
+.corner button{width:44px;height:44px;border-radius:14px;border:1px solid var(--line);background:var(--glass);font-size:20px;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+/* телефон: кнопки телефона/карты/паузы/экрана — строкой справа под деньгами (слева сверху — миникарта, снизу — джойстик) */
+body.touch .corner{top:calc(80px + var(--safe-t));bottom:auto;right:10px;left:auto;flex-direction:row;gap:6px}
+body.touch .corner button{width:40px;height:40px;font-size:18px;border-radius:12px}
+body.touch .timer{top:calc(132px + var(--safe-t))}body.touch .notes{top:calc(172px + var(--safe-t))}
+/* тач-управление */
+#pad{position:fixed;inset:0;pointer-events:none;z-index:4}
+.stick{position:fixed;width:120px;height:120px;border-radius:50%;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);opacity:0;transition:opacity .15s;pointer-events:none}
+.stick .knob{transition:none;will-change:transform}
+.stick.on{opacity:1}
+.knob{position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(255,207,122,.65)}
+.tbtn{position:fixed;pointer-events:auto;width:58px;height:58px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(12,16,32,.55);font-size:24px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);touch-action:none}
+.tbtn.on,.tbtn.hot{background:rgba(255,207,122,.75);border-color:#fff}
+.b-use{right:20px;bottom:calc(160px + var(--safe-b))}.b-car{right:92px;bottom:calc(196px + var(--safe-b))}
+.b-jump{right:20px;bottom:calc(88px + var(--safe-b))}.b-punch{right:92px;bottom:calc(122px + var(--safe-b))}
+.b-run{right:164px;bottom:calc(88px + var(--safe-b))}.b-horn{right:164px;bottom:calc(160px + var(--safe-b))}
+.b-roll{right:20px;bottom:calc(232px + var(--safe-b))}
+/* телефон (слово владельца 22.11: «карту снизу убери, там джойстик»): миникарта — в левый верхний угол, меньше;
+   в левом нижнем — база джойстика (видна в покое, при касании прыгает под палец) */
+body.touch .miniwrap{width:104px;left:10px;top:calc(10px + var(--safe-t));bottom:auto}body.touch .minimap{width:104px;height:104px}
+body.touch .help{left:124px}
+.stick.rest{opacity:.42;left:22px;bottom:calc(22px + var(--safe-b));top:auto}
+.stick.rest .knob{opacity:.8}
+body.touch .objective{bottom:calc(250px + var(--safe-b));font-size:14px}
+body.touch .prompt{bottom:calc(272px + var(--safe-b))}
+/* эффекты экрана */
+body.hurt #cv{filter:saturate(1.4) brightness(1.1) sepia(.4) hue-rotate(-30deg)}
+body.wasted #cv{filter:grayscale(1) contrast(1.1) brightness(.8);transition:filter 1s}
+body.busted #cv{filter:grayscale(.7) sepia(.3) hue-rotate(180deg) brightness(.85);transition:filter 1s}
+/* загрузка — floader.js: ключ-арт города, дорожный указатель «км до города», советы талисмана */
+@font-face{font-family:Oswald;font-style:normal;font-weight:600;font-display:swap;src:url(fonts/oswald-cyrillic-600-normal.woff2) format("woff2");unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:Oswald;font-style:normal;font-weight:600;font-display:swap;src:url(fonts/oswald-latin-600-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD}
+@font-face{font-family:Oswald;font-style:normal;font-weight:400;font-display:swap;src:url(fonts/oswald-cyrillic-400-normal.woff2) format("woff2");unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:Oswald;font-style:normal;font-weight:400;font-display:swap;src:url(fonts/oswald-latin-400-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+2000-206F,U+20AC,U+2122,U+2212,U+FEFF,U+FFFD}
+#loader{--sign:#0d56a3;--ember:#ffb347;--warm:#fff3df;--night:9,13,34;position:fixed;inset:0;z-index:20;overflow:hidden;background-color:#0d1330;color:#fff;font-family:Oswald,"Arial Narrow",system-ui,sans-serif;transition:background-color .9s ease .15s}
+#loader .art{position:absolute;inset:0;animation:fcl-in .9s ease both}
+@keyframes fcl-in{from{opacity:0}}
+#loader .art img{width:100%;height:100%;object-fit:cover;display:block;transform:scale(1.03);transform-origin:50% 55%}
+#loader .art img{animation:fcl-drift 18s cubic-bezier(.3,0,.6,1) forwards}
+@keyframes fcl-drift{to{transform:scale(1.1) translate(-.8%,-.5%)}}
+#loader .shade{position:absolute;inset:0;background:linear-gradient(180deg,rgba(var(--night),.6) 0,rgba(var(--night),0) 20%,rgba(var(--night),0) 48%,rgba(var(--night),.82) 100%)}
+#loader .mark{position:absolute;top:calc(22px + var(--safe-t,0px));left:26px;display:flex;align-items:center;gap:10px;font-weight:600;font-size:27px;letter-spacing:.01em;text-shadow:0 2px 14px rgba(0,0,0,.55)}
+#loader .mark img{width:40px;height:40px;filter:drop-shadow(0 2px 8px rgba(0,0,0,.4))}
+#loader .mark span{display:flex;flex-direction:column;line-height:1.05}#loader .mark small{font:400 14px/1.2 Oswald,"Arial Narrow",sans-serif;opacity:.8;letter-spacing:.02em}
+#loader .dock{position:absolute;left:28px;bottom:calc(28px + var(--safe-b,0px));width:min(500px,calc(100% - 56px));display:flex;flex-direction:column;gap:14px}
+#loader .tip{margin:0;display:flex;gap:10px;align-items:flex-start;min-height:44px;font:500 15px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--warm);text-shadow:0 1px 10px rgba(0,0,0,.7);transition:opacity .3s,transform .3s}
+#loader .tip.swap{opacity:0;transform:translateY(4px)}
+#loader .tip img{width:30px;height:30px;flex:none;margin-top:-2px}
+#loader .sign{background:var(--sign);border-radius:13px;padding:5px;box-shadow:0 22px 50px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.25)}
+#loader .sign-in{border:3px solid #fff;border-radius:9px;padding:9px 16px 12px}
+#loader .row{display:flex;align-items:center;gap:12px;width:100%;margin:0;padding:4px 0;border:0;background:none;color:#fff;font:600 36px/1.15 Oswald,"Arial Narrow",sans-serif;text-align:left}
+#loader .row svg{width:34px;height:34px;flex:none}
+#loader .row b{font-weight:600;white-space:nowrap;display:flex;flex-direction:column}
+#loader .row b i{font:400 .46em/1.1 Oswald,"Arial Narrow",sans-serif;font-style:normal;opacity:.9;letter-spacing:.03em;margin-top:1px}
+#loader.by .lane{margin-top:6px}
+#loader .km{margin-left:auto;font-variant-numeric:tabular-nums;white-space:nowrap}
+#loader .lane{display:flex;gap:7px;margin:8px 0 12px}
+#loader .lane i{flex:1;height:5px;border-radius:1px;background:rgba(255,255,255,.28);transition:background-color .25s}
+#loader .lane i.on{background:var(--ember);box-shadow:0 0 10px rgba(255,179,71,.55)}
+#loader .row.alt{font-size:24px;padding-top:12px;border-top:2px solid #fff;cursor:pointer}
+#loader .row.alt svg{width:24px;height:24px;margin:0 3px}
+#loader .go{margin-left:auto;padding:4px 14px 5px;border-radius:6px;background:#fff;color:var(--sign);font:600 16px/1.2 Oswald,"Arial Narrow",sans-serif;transition:background-color .2s,color .2s}
+#loader .row.alt:hover .go{background:#ffcf7a;color:#2a1205}
+#loader .row.alt:focus-visible{outline:3px solid #ffcf7a;outline-offset:6px;border-radius:4px}
+#loader .osm{position:absolute;right:14px;bottom:calc(10px + var(--safe-b,0px));font:500 11px system-ui,sans-serif;color:rgba(255,243,223,.72)}
+#loader.picking .dock,#loader.picking .mark{opacity:0;transition:opacity .3s}
+#loader.done{background-color:transparent;pointer-events:none}
+#loader.done .art{opacity:0;transform:scale(1.12);transition:opacity .8s ease .15s,transform 1s cubic-bezier(.55,0,.8,.3)}
+#loader.done .dock{opacity:0;transform:translateY(28px);transition:opacity .45s,transform .5s cubic-bezier(.55,0,.8,.3)}
+#loader.done .mark,#loader.done .shade,#loader.done .osm{opacity:0;transition:opacity .5s}
+@media (max-width:560px){#loader .mark{top:calc(14px + var(--safe-t,0px));left:16px;font-size:22px}#loader .mark img{width:32px;height:32px}
+#loader .dock{left:16px;right:16px;width:auto;bottom:calc(16px + var(--safe-b,0px));gap:12px}#loader .tip{font-size:14px}
+#loader .row{font-size:28px}#loader .row.alt{font-size:20px}#loader .sign-in{padding:8px 13px 11px}
+#loader.osm-on .dock{bottom:calc(30px + var(--safe-b,0px))}#loader .osm{right:0;left:0;text-align:center;bottom:calc(9px + var(--safe-b,0px))}
+#loader .shade{background:linear-gradient(180deg,rgba(var(--night),.55) 0,rgba(var(--night),0) 16%,rgba(var(--night),0) 42%,rgba(var(--night),.88) 100%)}}
+@media (prefers-reduced-motion:reduce){#loader .art,#loader .art img{animation:none}#loader.done .art,#loader.done .dock{transform:none}}
+@media (max-width:560px){.money{font-size:21px}.stars{font-size:19px}.phone{right:6px;left:6px;width:auto}}
+</style>
+</head>
+<body>
+<canvas id="cv" tabindex="0" aria-label="Флейм-Сити — 3D-город"></canvas>
+<div id="bubbles"></div>
+<div id="hud"></div>
+<div id="loader"></div>
+<!-- Экран загрузки и выбор города (window.FC_CITY) — до всего остального: его видно, пока грузятся движок и модули. -->
+<script src="floader.js"></script>
+<!-- Настройки развёртывания (сервер, вход, ссылки) — config.js; его заменяют при выкладке (docs/DEPLOY.md). -->
+<script src="config.js"></script>
+<!-- Telegram Mini App SDK — только внутри Telegram (в адресе есть tgWebAppData): в обычном браузере игра не делает
+     ни одного запроса за пределы своего адреса. -->
+<script>
+if (/tgWebApp/.test(window.location.hash + window.location.search) || window.TelegramWebviewProxy) {
+  document.write('<script src="https://telegram.org/js/telegram-web-app.js"><\/script>');
+}
+</script>
+<!-- Движок: своя урезанная сборка three r160 (tools/world-three.cjs → vendor/three-r160.js). -->
+<script src="vendor/three-r160.js" data-vendor="three"></script>
+<!-- Город (?city=minsk или выбор на экране загрузки, запоминается) выбрал floader.js → window.FC_CITY. «Минск 1:1» —
+     данные OpenStreetMap: meta.js (граф улиц, важные дома) грузится синхронно до модулей; без него — Флейм-Сити. -->
+<script>
+if (window.FC_CITY === "minsk") document.write('<script src="minsk/meta.js"><\/script>');
+</script>
+<!-- здания-зоны (данные) -->
+<script src="data/zones.js"></script>
+<script src="fcore.js"></script>
+<script src="finput.js"></script>
+<script src="fmap.js"></script>
+<script src="fmapx.js"></script>
+<script src="fgfx.js"></script>
+<script src="fbuild.js"></script>
+<script src="fosm.js"></script>
+<script src="flandmarks.js"></script>
+<script src="fdeco.js"></script>
+<script src="fpeople.js"></script>
+<script src="fmodels.js"></script>
+<!-- люди (Rocketbox + Quaternius): толпа шейдером, ближние — скелет и микшер; ассеты people/, авторы — people/CREDITS.md -->
+<script src="fhumans.js"></script>
+<!-- HUD раньше игровых модулей: они регистрируют взаимодействия и приложения телефона при загрузке -->
+<script src="fhud.js"></script>
+<script src="fjuice.js"></script>
+<script src="fcars.js"></script>
+<script src="fcars2.js"></script>
+<script src="fcarsbox.js"></script>
+<script src="fcarlist.js"></script>
+<script src="fcarsgl.js"></script>
+<script src="fpolice.js"></script>
+<script src="fair.js"></script>
+<script src="fweap.js"></script>
+<!-- оружие по-разному, фоторежим и повтор, события города и календарь недели (22.11 v3) -->
+<script src="fguns.js"></script>
+<script src="fphoto.js"></script>
+<script src="fevents.js"></script>
+<script src="fheist.js"></script>
+<script src="fhome.js"></script>
+<script src="fprop.js"></script>
+<!-- достижения (FC.ach: реестр для всех модулей — fmissions, fsecrets…), уровни и опыт, рейтинги, кланы и войны за районы -->
+<script src="fach.js"></script>
+<script src="fprogress.js"></script>
+<script src="franks.js"></script>
+<script src="fcrews.js"></script>
+<script src="fwar.js"></script>
+<script src="fbiz.js"></script>
+<script src="fseason.js"></script>
+<script src="fmodes.js"></script>
+<script src="fgang.js"></script>
+<script src="fsocial.js"></script>
+<script src="finside.js"></script>
+<script src="ffurn.js"></script>
+<script src="fplaces.js"></script>
+<script src="fmetro.js"></script>
+<script src="flife.js"></script>
+<!-- разговоры и стычки с прохожими (нужен HUD: взаимодействия) -->
+<script src="ftalk.js"></script>
+<script src="fgames.js"></script>
+<script src="fjobs.js"></script>
+<script src="faudio.js"></script>
+<script src="fstory.js"></script>
+<script src="fstory2.js"></script>
+<script src="fmissions.js"></script>
+<script src="fmissions2.js"></script>
+<script src="fsecrets.js"></script>
+<script src="fdaily.js"></script>
+<script src="fnet.js"></script>
+<script src="fmp.js"></script>
+<script src="fmain.js"></script>
+</body>
+</html>

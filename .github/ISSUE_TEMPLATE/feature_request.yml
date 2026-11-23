@@ -1,0 +1,22 @@
+name: Идея / Feature request
+description: Предложить механику, миссию, место, улучшение
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Идея / Idea
+      description: Что добавить и почему игрокам это понравится.
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: Как это может работать / How it could work
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Правила содержания / Content rules
+      options:
+        - label: Без настоящих брендов, госсимволики, политики и крови / No real brands, state symbols, politics or gore
+          required: true

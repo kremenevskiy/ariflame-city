@@ -1,0 +1,26 @@
+{
+  "name": "ariflame-city",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Флейм-Сити — браузерная 3D-игра в открытом городе (и «Минск 1:1» из OpenStreetMap) с онлайн-сервером",
+  "license": "MIT",
+  "scripts": {
+    "dev": "node tools/dev-server.cjs",
+    "lint": "eslint client tools",
+    "test": "node tools/run-pytest.cjs",
+    "check": "node tools/check/smoke.cjs",
+    "build": "node tools/build.cjs",
+    "three": "node tools/world-three.cjs",
+    "cars": "node tools/fc-cars-build.cjs",
+    "tracks": "node tools/gen_tracks.cjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "eslint": "10.8.1",
+    "globals": "16.5.0",
+    "playwright": "1.62.1"
+  }
+}

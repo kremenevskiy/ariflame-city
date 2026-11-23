@@ -1,0 +1,36 @@
+name: Ошибка / Bug report
+description: Что-то работает не так в игре или на сервере
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: Что случилось / What happened
+      description: Что делали, что ожидали, что получили. Скриншот или видео очень помогают.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как воспроизвести / Steps to reproduce
+      placeholder: "1. Открыть ?city=minsk\n2. Сесть в машину\n3. …"
+  - type: dropdown
+    id: city
+    attributes:
+      label: Город / City
+      options: ["Флейм-Сити", "Минск 1:1", "оба / both", "не важно / n/a"]
+  - type: input
+    id: device
+    attributes:
+      label: Устройство и браузер / Device & browser
+      placeholder: "iPhone 13, Safari 18 / Telegram Android / Chrome 131 Windows"
+  - type: input
+    id: quality
+    attributes:
+      label: Качество графики / Quality (?q=)
+      placeholder: "low / mid / high"
+  - type: textarea
+    id: console
+    attributes:
+      label: Ошибки консоли / Console errors
+      render: text

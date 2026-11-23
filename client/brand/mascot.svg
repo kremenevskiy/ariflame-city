@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <!-- Уголёк — талисман Флейм-Сити (свой рисунок проекта, MIT). Пламя над угольком, глаза и улыбка. -->
+  <defs>
+    <radialGradient id="fl" cx="50%" cy="68%" r="62%">
+      <stop offset="0" stop-color="#fff7c2"/>
+      <stop offset=".38" stop-color="#ffc247"/>
+      <stop offset=".75" stop-color="#ff7a1f"/>
+      <stop offset="1" stop-color="#e2401a"/>
+    </radialGradient>
+    <linearGradient id="coal" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#5a2a1c"/>
+      <stop offset="1" stop-color="#2a120c"/>
+    </linearGradient>
+  </defs>
+  <path d="M256 28c34 70 118 120 118 236 0 92-54 152-118 152S138 356 138 264c0-58 30-92 56-118 6 40 22 62 40 70-6-80 6-130 22-188z" fill="url(#fl)"/>
+  <path d="M256 180c18 40 62 70 62 128 0 46-28 76-62 76s-62-30-62-76c0-30 16-48 30-62 4 22 12 34 22 38-2-42 2-74 10-104z" fill="#fff3b0" opacity=".75"/>
+  <ellipse cx="256" cy="430" rx="132" ry="54" fill="url(#coal)"/>
+  <path d="M168 418c30-16 58-10 82 2M270 412c26-12 52-10 76 6" stroke="#ff7a1f" stroke-width="8" stroke-linecap="round" fill="none" opacity=".8"/>
+  <ellipse cx="222" cy="292" rx="17" ry="22" fill="#3a1606"/>
+  <ellipse cx="290" cy="292" rx="17" ry="22" fill="#3a1606"/>
+  <circle cx="228" cy="284" r="6" fill="#fff"/>
+  <circle cx="296" cy="284" r="6" fill="#fff"/>
+  <path d="M226 334q30 26 60 0" stroke="#3a1606" stroke-width="9" stroke-linecap="round" fill="none"/>
+</svg>

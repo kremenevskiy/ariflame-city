@@ -1,0 +1,258 @@
+[
+ {
+  "id": "mis_first_medal",
+  "title": "Первая медаль",
+  "desc": "Получи любую медаль в миссии",
+  "hidden": false,
+  "rarity": "common",
+  "city": "both"
+ },
+ {
+  "id": "mis_all_flame",
+  "title": "Мастер на все руки",
+  "desc": "Медаль в каждой миссии Флейм-Сити",
+  "hidden": false,
+  "rarity": "rare",
+  "city": "flame"
+ },
+ {
+  "id": "mis_all_minsk",
+  "title": "Минчанин-универсал",
+  "desc": "Медаль в каждой миссии Минска",
+  "hidden": false,
+  "rarity": "rare",
+  "city": "minsk"
+ },
+ {
+  "id": "mis_gold_flame",
+  "title": "Золотой Огонёк",
+  "desc": "Золото во всех миссиях Флейм-Сити",
+  "hidden": false,
+  "rarity": "legendary",
+  "city": "flame"
+ },
+ {
+  "id": "mis_gold_minsk",
+  "title": "Золотой Минск",
+  "desc": "Золото во всех миссиях Минска",
+  "hidden": false,
+  "rarity": "legendary",
+  "city": "minsk"
+ },
+ {
+  "id": "mis_tour_flame",
+  "title": "С высоты птичьего полёта",
+  "desc": "Пройди экскурсию «Над городом» во Флейм-Сити",
+  "hidden": false,
+  "rarity": "common",
+  "city": "flame"
+ },
+ {
+  "id": "mis_tour_minsk",
+  "title": "Минск с высоты",
+  "desc": "Пройди экскурсию «Над городом» в Минске",
+  "hidden": false,
+  "rarity": "common",
+  "city": "minsk"
+ },
+ {
+  "id": "mis_rescue",
+  "title": "Ангел-хранитель",
+  "desc": "Сними троих с горящей крыши",
+  "hidden": false,
+  "rarity": "common",
+  "city": "both"
+ },
+ {
+  "id": "mis_cargo",
+  "title": "Крановщик неба",
+  "desc": "Донеси груз на тросе, не разбив его",
+  "hidden": false,
+  "rarity": "rare",
+  "city": "both"
+ },
+ {
+  "id": "mis_bullseye",
+  "title": "В яблочко",
+  "desc": "Приземлись с парашютом не дальше 2 м от центра мишени",
+  "hidden": false,
+  "rarity": "epic",
+  "city": "both"
+ },
+ {
+  "id": "mis_courier_gold",
+  "title": "Молния",
+  "desc": "Золото в «Курьере-молнии»",
+  "hidden": false,
+  "rarity": "rare",
+  "city": "both"
+ },
+ {
+  "id": "mis_vip_five",
+  "title": "Пять звёзд",
+  "desc": "Довези Алису с настроением 95+",
+  "hidden": false,
+  "rarity": "epic",
+  "city": "both"
+ },
+ {
+  "id": "mis_race_win",
+  "title": "Король улиц",
+  "desc": "Выиграй уличную гонку",
+  "hidden": false,
+  "rarity": "rare",
+  "city": "both"
+ },
+ {
+  "id": "mis_stunts",
+  "title": "Каскадёр",
+  "desc": "Пройди все пять трамплинов киносъёмки",
+  "hidden": false,
+  "rarity": "common",
+  "city": "both"
+ },
+ {
+  "id": "mis_getaway_loud",
+  "title": "Громко и золото",
+  "desc": "Золото в «Водителе налёта» громким подходом",
+  "hidden": false,
+  "rarity": "epic",
+  "city": "both"
+ },
+ {
+  "id": "mis_crash_master",
+  "title": "Любимец страховой",
+  "desc": "10 000 очков в «Краш-тесте»",
+  "hidden": false,
+  "rarity": "epic",
+  "city": "both"
+ },
+ {
+  "id": "mis_drones",
+  "title": "Хранитель идей",
+  "desc": "Перехвати всех дронов СкукаСофт",
+  "hidden": false,
+  "rarity": "rare",
+  "city": "both"
+ },
+ {
+  "id": "sec_og10",
+  "title": "Искатель огоньков",
+  "desc": "Найди 10 огоньков",
+  "hidden": false,
+  "rarity": "common",
+  "city": "both"
+ },
+ {
+  "id": "sec_og25",
+  "title": "Хранитель огоньков",
+  "desc": "Найди 25 огоньков",
+  "hidden": false,
+  "rarity": "rare",
+  "city": "both"
+ },
+ {
+  "id": "sec_og_all_flame",
+  "title": "Все огоньки Флейм-Сити",
+  "desc": "Найди все 50 огоньков Флейм-Сити",
+  "hidden": false,
+  "rarity": "legendary",
+  "city": "flame"
+ },
+ {
+  "id": "sec_og_all_minsk",
+  "title": "Все огоньки Минска",
+  "desc": "Найди все 50 огоньков Минска",
+  "hidden": false,
+  "rarity": "legendary",
+  "city": "minsk"
+ },
+ {
+  "id": "sec_jump_first",
+  "title": "Первый полёт",
+  "desc": "Засчитай уникальный прыжок",
+  "hidden": false,
+  "rarity": "common",
+  "city": "both"
+ },
+ {
+  "id": "sec_jumps_all_flame",
+  "title": "Каскадёр года",
+  "desc": "Все уникальные прыжки Флейм-Сити",
+  "hidden": false,
+  "rarity": "legendary",
+  "city": "flame"
+ },
+ {
+  "id": "sec_jumps_all_minsk",
+  "title": "Каскадёр года: Минск",
+  "desc": "Все уникальные прыжки Минска",
+  "hidden": false,
+  "rarity": "legendary",
+  "city": "minsk"
+ },
+ {
+  "id": "sec_cuts_flame",
+  "title": "Знаток дворов",
+  "desc": "Найди все 8 срезок Флейм-Сити",
+  "hidden": false,
+  "rarity": "epic",
+  "city": "flame"
+ },
+ {
+  "id": "sec_cuts_minsk",
+  "title": "Знаток дворов: Минск",
+  "desc": "Найди все 8 срезок Минска",
+  "hidden": false,
+  "rarity": "epic",
+  "city": "minsk"
+ },
+ {
+  "id": "egg_ufo",
+  "title": "Они среди нас",
+  "desc": "Увидь то, что висит над озером в три ночи",
+  "hidden": true,
+  "rarity": "legendary",
+  "city": "both"
+ },
+ {
+  "id": "egg_ghost",
+  "title": "Призрак проспекта",
+  "desc": "Подъедь к машине, которой нет",
+  "hidden": true,
+  "rarity": "epic",
+  "city": "both"
+ },
+ {
+  "id": "egg_pigeon",
+  "title": "Голубь-мудрец",
+  "desc": "Выслушай голубя три раза",
+  "hidden": true,
+  "rarity": "rare",
+  "city": "both"
+ },
+ {
+  "id": "egg_room",
+  "title": "Комната без таблички",
+  "desc": "Открой дверь без таблички в штабе Флейм",
+  "hidden": true,
+  "rarity": "epic",
+  "city": "both"
+ },
+ {
+  "id": "egg_garage",
+  "title": "Тайный гараж",
+  "desc": "Найди гараж без вывески",
+  "hidden": true,
+  "rarity": "rare",
+  "city": "both"
+ },
+ {
+  "id": "egg_taxi",
+  "title": "Таксист не сдаёт",
+  "desc": "Прокатись на такси бесплатно",
+  "hidden": true,
+  "rarity": "rare",
+  "city": "both"
+ }
+]

@@ -1,0 +1,99 @@
+{
+  "v": 1,
+  "city": "minsk",
+  "about": "Районы для старта в Минске 1:1 — общий пакет мест (формат — places/README.md). Картинки — places/minsk/, свои (модель изображений).",
+  "districts": [
+    {
+      "id": "mayak",
+      "name": "Маяк Минска",
+      "about": "Бульвар Пикассо, Арка, набережная",
+      "x": 4720,
+      "z": -3455,
+      "h": -90,
+      "img": "minsk/mayak.webp",
+      "art": "minsk-mayak"
+    },
+    {
+      "id": "mir",
+      "name": "Минск-Мир",
+      "about": "Финансовый центр, кварталы-страны, Аэродромная",
+      "x": -2050,
+      "z": 3850,
+      "h": -142,
+      "img": "minsk/mir.webp",
+      "art": "minsk-mir"
+    },
+    {
+      "id": "zyb",
+      "name": "Зыбицкая",
+      "about": "Бары, веранды, гирлянды — от Немиги к реке",
+      "x": -1540,
+      "z": -662,
+      "h": 73,
+      "img": "minsk/zyb.webp",
+      "art": "minsk-zyb"
+    },
+    {
+      "id": "nemiga",
+      "name": "Немига",
+      "about": "Торговые центры и Свислочь",
+      "x": -2126,
+      "z": -164,
+      "h": 60,
+      "img": "minsk/nemiga.webp",
+      "art": "minsk-nemiga"
+    },
+    {
+      "id": "library",
+      "name": "Нацбиблиотека",
+      "about": "Алмаз с медиафасадом",
+      "x": 4337,
+      "z": -3380,
+      "h": 180,
+      "img": "minsk/library.webp",
+      "art": "minsk-library"
+    },
+    {
+      "id": "trinity",
+      "name": "Троицкое",
+      "about": "Старый город у реки",
+      "x": -1539,
+      "z": -927,
+      "h": 90,
+      "img": "minsk/trinity.webp",
+      "art": "minsk-trinity"
+    },
+    {
+      "id": "square",
+      "name": "Пл. Независимости",
+      "about": "Красный костёл и метро",
+      "x": -2159,
+      "z": 488,
+      "h": 0,
+      "img": "minsk/church.webp",
+      "art": "minsk-church"
+    },
+    {
+      "id": "gates",
+      "name": "Ворота Минска",
+      "about": "Вокзал и башни с часами",
+      "x": -1867,
+      "z": 889,
+      "h": 0,
+      "img": "minsk/gates.webp",
+      "art": "minsk-gates"
+    },
+    {
+      "id": "oct",
+      "name": "Октябрьская",
+      "about": "Проспект и Дворец Республики",
+      "x": -1226,
+      "z": -306,
+      "h": 135,
+      "img": "minsk/avenue.webp",
+      "art": "minsk-avenue"
+    }
+  ],
+  "places": [],
+  "biz": []
+}

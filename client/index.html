@@ -64,7 +64,7 @@ button{font:inherit;color:inherit}
 /* подсказки */
 .help{position:fixed;left:14px;top:calc(12px + var(--safe-t));max-width:340px;background:var(--glass);border:1px solid var(--line);border-radius:14px;padding:10px 13px;font-size:13px;opacity:0;transform:translateY(-8px);transition:.3s;backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
 .help.on{opacity:1;transform:none}.help b{color:var(--gold)}
-.areacard{position:fixed;right:28px;bottom:calc(112px + var(--safe-b));text-align:right;pointer-events:none;opacity:0;transform:translateX(24px);transition:opacity .45s ease,transform .45s ease;z-index:6}.areacard.on{opacity:1;transform:none}.areacard b{display:block;font:600 46px/1 Oswald,"Arial Narrow",system-ui,sans-serif;text-transform:uppercase;letter-spacing:.02em;color:#fff3df;text-shadow:0 3px 0 rgba(0,0,0,.45),0 0 26px rgba(255,140,40,.55)}.areacard span{display:inline-block;margin-top:6px;padding:3px 9px;border-radius:5px;background:#0d56a3;color:#fff;font:600 13px/1.3 system-ui,sans-serif;box-shadow:0 2px 0 rgba(0,0,0,.3)}body.touch .areacard{right:auto;left:50%;bottom:auto;top:38%;text-align:center;transform:translate(-50%,-10px)}body.touch .areacard.on{transform:translate(-50%,0)}body.touch .areacard b{font-size:32px}
+.areacard{position:fixed;right:28px;bottom:calc(112px + var(--safe-b));text-align:right;pointer-events:none;opacity:0;transform:translateX(24px);transition:opacity .45s ease,transform .45s ease;z-index:6}.areacard.on{opacity:1;transform:none}.areacard b{display:block;font:600 46px/1 Oswald,"Arial Narrow",system-ui,sans-serif;text-transform:uppercase;letter-spacing:.02em;color:#fff3df;text-shadow:0 3px 0 rgba(0,0,0,.45),0 0 26px rgba(255,140,40,.55)}.areacard span{display:inline-block;margin-top:6px;padding:3px 9px;border-radius:5px;background:#0d56a3;color:#fff;font:600 13px/1.3 system-ui,sans-serif;box-shadow:0 2px 0 rgba(0,0,0,.3)}
 .objective{position:fixed;left:50%;bottom:calc(26px + var(--safe-b));transform:translateX(-50%);max-width:min(640px,90vw);text-align:center;font:600 16px/1.3 system-ui;text-shadow:0 2px 8px #000,0 0 2px #000;opacity:0;transition:.3s}
 .objective.on{opacity:1}.objective b{color:var(--gold)}.objective em{font-style:normal;color:#6bd5ff}
 .prompt{position:fixed;left:50%;bottom:calc(64px + var(--safe-b));transform:translateX(-50%);background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:7px 14px;font:600 14px system-ui;opacity:0;transition:opacity .15s;white-space:nowrap;max-width:92vw;overflow:hidden;text-overflow:ellipsis;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
@@ -154,16 +154,28 @@ body.touch .topr{right:calc(12px + var(--safe-r));display:flex;flex-wrap:wrap;ju
 body.touch .topr .clock{order:-1;margin:0}body.touch .topr .stars{flex-basis:100%;text-align:right;font-size:17px}body.touch .topr .mdelta{display:none}
 body.touch .mp-online{top:calc(46px + var(--safe-t))!important;right:calc(10px + var(--safe-r))!important}
 body.touch:has(.topr .stars i) .mp-online{top:calc(72px + var(--safe-t))!important}
-body.touch .toasts{top:calc(214px + var(--safe-t));max-width:calc(100vw - 132px)}
-body.touch .toast{max-width:calc(100vw - 132px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* полоса уведомлений: на компьютере прозрачна (у плашек свои места), на телефоне — стопка сверху по центру, как пуш на
+   iPhone: плашка района, достижение, сообщение, короткая плашка; середина экрана свободна (24.11) */
+.lane{display:contents}
+body.touch .lane{display:flex;flex-direction:column;align-items:stretch;gap:6px;position:fixed;z-index:40;left:50%;top:calc(6px + var(--safe-t));transform:translateX(-50%);width:min(calc(100vw - 16px - var(--safe-l) - var(--safe-r)),440px);pointer-events:none}
+body.touch .lane>.areacard,body.touch .lane>.ac-ban,body.touch .lane>.notes,body.touch .lane>.toasts{position:static;left:auto;right:auto;top:auto;bottom:auto;width:auto;max-width:none;margin:0;transform:none}
+body.touch .lane>.areacard:not(.on),body.touch .lane>.ac-ban:not(.on){display:none}
+body.touch .lane>.ac-ban{order:0}body.touch .lane>.areacard{order:1}body.touch .lane>.notes{order:2}body.touch .lane>.toasts{order:3}   /* главное — сверху, короткая плашка — под ним */
+body.touch .lane>.areacard.on,body.touch .lane>.ac-ban.on{animation:notein .4s cubic-bezier(.2,.9,.3,1.15)}
+body.touch .lane>.areacard{text-align:center;padding:8px 14px 10px;border-radius:16px;background:rgba(10,14,30,.94);border:1px solid rgba(255,207,122,.3);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);box-shadow:0 8px 24px rgba(0,0,0,.3)}
+body.touch .lane>.areacard b{font-size:26px}body.touch .lane>.areacard span{font-size:12px;margin-top:4px}
+body.touch:has(.lane>.ac-ban.on) .lane>.notes,body.touch:has(.lane>.areacard.on) .lane>.notes{display:none}   /* одно крупное за раз */
+body.touch .lane>.notes{pointer-events:auto}body.touch .lane .note{background:#f5f7ff}body.touch .lane>.ac-ban{background:rgba(12,16,32,.97)}
+body.touch .note{animation:notein .4s cubic-bezier(.2,.9,.3,1.15)}body.touch .note.bye{opacity:0;transform:translateY(-28px)}
+body.touch .lane>.toasts{align-items:center}body.touch .toasts .toast:not(:last-child){display:none}
+body.touch .toast{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@keyframes notein{from{opacity:0;transform:translateY(-40px)}to{opacity:1;transform:none}}
+body.touch .big{top:calc(19% + var(--safe-t))}   /* «ЗАКАЗ ДОСТАВЛЕН» и т. п. — выше героя, не по центру */
 body.touch .notes .note:not(:first-child){display:none}   /* на телефоне — одно, последнее сообщение */
 @media (orientation:portrait) and (max-height:700px){body.touch .corner{gap:6px}body.touch .corner button{width:36px;height:36px;border-radius:11px}body.touch .corner button svg{width:18px;height:18px}}
 body.touch .timer{top:calc(60px + var(--safe-t));right:auto;left:50%;transform:translateX(-50%);font-size:22px}
-body.touch .ac-ban{left:calc(10px + var(--safe-l));right:calc(62px + var(--safe-r));top:calc(258px + var(--safe-t));width:auto;max-width:340px;margin-left:auto;transform:translateY(-12px)}
-body.touch .ac-ban.on{transform:none}body.touch:has(.ac-ban.on) .notes{opacity:0}
 body.touch .note p{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
-body.touch .notes{top:calc(258px + var(--safe-t));right:calc(62px + var(--safe-r));width:auto;left:calc(10px + var(--safe-l));max-width:340px;margin-left:auto}
-@media (orientation:portrait) and (max-height:700px){body.touch .toasts{top:calc(188px + var(--safe-t))}body.touch .notes,body.touch .ac-ban{top:calc(224px + var(--safe-t))}}
+
 /* тач-управление */
 #pad{position:fixed;inset:0;pointer-events:none;z-index:4}
 .stick{position:fixed;width:120px;height:120px;border-radius:50%;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);opacity:0;transition:opacity .15s;pointer-events:none}
@@ -215,12 +227,7 @@ body.touch #hud .prompt svg{width:22px;height:22px;flex:none}body.touch #hud .pr
   body.touch .mp-online{top:calc(152px + var(--safe-t))!important;left:calc(10px + var(--safe-l))!important;right:auto!important}
   body.touch:has(.topr .stars i) .mp-online{top:calc(152px + var(--safe-t))!important}
   body.touch .timer{top:calc(12px + var(--safe-t));left:auto;right:calc(434px + var(--safe-r));transform:none;font-size:20px}
-  body.touch .toasts{top:calc(56px + var(--safe-t));left:calc(112px + var(--safe-l));transform:none;align-items:flex-start;max-width:40vw}
-  body.touch .toast{max-width:40vw}
-  body.touch .notes{top:calc(46px + var(--safe-t));left:auto;right:calc(10px + var(--safe-r));width:min(300px,38vw)}
-  body.touch:has(.topr .stars i) .notes{top:calc(72px + var(--safe-t))}
-  body.touch .ac-ban{top:calc(46px + var(--safe-t));left:auto;right:calc(10px + var(--safe-r));width:min(300px,38vw)}
-  body.touch:has(.topr .stars i) .ac-ban{top:calc(72px + var(--safe-t))}   /* розыск — звёзды строкой под деньгами */
+  body.touch .lane{width:min(46vw,420px)}
   body.touch .notes .note:not(:first-child){display:none}
   body.touch .help{top:calc(56px + var(--safe-t))}
   body.touch .objective{bottom:calc(14px + var(--safe-b));max-width:42vw;font-size:13px}

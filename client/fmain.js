@@ -351,7 +351,7 @@
       var busy = FC.osm && FC.osm.busy && FC.osm.busy();
       if ((warmed && !busy && performance.now() - t0 > 300) || performance.now() - t0 > 4000) hideLoader(); else setTimeout(waitCity, 100);
     })();
-    FC.started = true;
+    FC.started = true; FC.startedAt = performance.now();
     FC.emit("start", {});
     // первый заход — лучший кадр: ясное солнце, без дождя; в районе — камера ниже (ориентир в кадре), пролёт и плашка района
     if (M.minsk && FC.save.tutorial) { if (G.preset) G.preset("summer"); if (G.calm) G.calm(300); }

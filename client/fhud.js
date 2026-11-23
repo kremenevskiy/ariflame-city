@@ -41,8 +41,13 @@
   var helpUntil = 0;
   function help(html, sec) { helpEl.innerHTML = html; helpEl.classList.add("on"); helpUntil = performance.now() + (sec || 7) * 1000; }
 
+  /* ---- полоса уведомлений (24.11: «на телефоне всё вылазит по центру — пусть сверху приходит как уведомление»): на
+     телефоне плашка района, достижение (fach.js), сообщение и короткие плашки — одной стопкой сверху, как пуш на iPhone,
+     середина экрана свободна. На компьютере полоса «прозрачна» (display:contents) — у каждого своё место. */
+  var lane = el("div", "lane"); hud.appendChild(lane);
+
   /* ---- плашка района: крупное имя места на 3 с при входе в район (стиль — табличка-указатель и огонь) ----------------- */
-  var areaEl = el("div", "ui areacard"); hud.appendChild(areaEl);
+  var areaEl = el("div", "ui areacard"); lane.appendChild(areaEl);
   var areaT = 0;
   function areaCard(name, sub) {
     if (!name) return;
@@ -67,7 +72,7 @@
   function setTimer(sec, label, onEnd) { timer = sec == null ? null : { left: sec, label: label || "", end: onEnd }; timerEl.classList.toggle("on", !!timer); }
 
   /* ---- тосты и большие надписи ------------------------------------------------------------------------------- */
-  var toastBox = el("div", "ui toasts"); hud.appendChild(toastBox);
+  var toastBox = el("div", "ui toasts"); lane.appendChild(toastBox);
   function toast(text, cls, sec) {
     // тот же текст уже на экране — не дублируем стопкой одинаковых строк
     for (var k = 0; k < toastBox.children.length; k++) { var o = toastBox.children[k]; if (o._txt === text && !o.classList.contains("bye")) return; }
@@ -83,13 +88,16 @@
   }
 
   /* ---- уведомление «сообщение на телефон» ---------------------------------------------------------------------- */
-  var noteBox = el("div", "ui notes"); hud.appendChild(noteBox);
+  var noteBox = el("div", "ui notes"); lane.appendChild(noteBox);
   function notify(from, text, icon, sec) {
     var n = el("div", "note", "<div class='ni'>" + (icon || "💬") + "</div><div><b>" + esc(from) + "</b><p>" + esc(text) + "</p></div>");
     noteBox.prepend(n);
     if (FC.audio) FC.audio.play("note");
-    setTimeout(function () { n.classList.add("bye"); }, (sec || 6) * 1000);
-    setTimeout(function () { n.remove(); }, (sec || 6) * 1000 + 500);
+    // на телефоне пуш сверху закрывает миникарту и деньги — держим не дольше 6 с, тап — убрать сразу
+    var dur = (sec || 6) * 1000; if (FC.input && FC.input.touch) dur = Math.min(dur, 6000);
+    var bye = function () { n.classList.add("bye"); setTimeout(function () { n.remove(); }, 450); };
+    n.addEventListener("click", bye);
+    setTimeout(bye, dur);
     FC.emit("notify", { from: from, text: text });
   }
 

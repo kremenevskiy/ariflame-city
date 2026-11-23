@@ -107,13 +107,25 @@
 
   /* ---- плашка «достижение открыто»: по одной, очередью ---------------------------------------------------------- */
   var ban = document.createElement("div"); ban.className = "ac-ban";
-  function mountBan() { if (!ban.parentNode) (document.getElementById("hud") || document.body).appendChild(ban); }
+  // плашка — в полосе уведомлений HUD (на телефоне — сверху, как пуш), первой; без HUD — просто в страницу
+  function mountBan() {
+    if (ban.parentNode) return;
+    var lane = document.querySelector("#hud .lane");
+    if (lane) lane.insertBefore(ban, lane.firstChild); else (document.getElementById("hud") || document.body).appendChild(ban);
+  }
   function banner(d) {
     S.q.push(d);
     if (S.q.length === 1) showNext();
   }
   function showNext() {
     var d = S.q[0]; if (!d) return;
+    // первые 12 секунд игры — без достижений: человек осматривается (24.11: «в самом начале начинаешь ему хуярить»)
+    var calm = (FC.startedAt || 0) + 12000 - performance.now();
+    if (!FC.started || calm > 0) { clearTimeout(S.calmT); S.calmT = setTimeout(showNext, Math.max(calm, 800)); return; }
+    // на телефоне полоса сверху — одно за раз: сообщение (Макс и др.) или плашка района на экране — ждём, не перебиваем
+    if (FC.input && FC.input.touch && document.querySelector("#hud .lane .note:not(.bye), #hud .lane .areacard.on")) {
+      clearTimeout(S.calmT); S.calmT = setTimeout(showNext, 800); return;
+    }
     mountBan();
     var R = RARITY[d.rarity];
     ban.style.borderColor = R.color;

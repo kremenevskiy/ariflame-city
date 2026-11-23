@@ -149,13 +149,21 @@ body.warp #cv{filter:brightness(1.8) blur(3px);transition:filter .25s}
 body.touch .corner{top:calc(102px + var(--safe-t));bottom:auto;right:calc(10px + var(--safe-r));left:auto;flex-direction:column;gap:8px}
 body.touch .corner button{width:42px;height:42px;border-radius:13px;background:rgba(10,14,30,.52);border:1px solid rgba(255,255,255,.16);box-shadow:0 4px 14px rgba(0,0,0,.25)}
 body.touch .corner button svg{width:21px;height:21px}
-body.touch .topr{right:calc(12px + var(--safe-r))}
-body.touch .mp-online{top:calc(70px + var(--safe-t))!important;right:calc(10px + var(--safe-r))!important}
+body.touch .corner button[data-a=map]{display:none}   /* карта на телефоне — тап по миникарте */
+body.touch .topr{right:calc(12px + var(--safe-r));display:flex;flex-wrap:wrap;justify-content:flex-end;align-items:baseline;column-gap:10px;max-width:min(190px,calc(100vw - 176px))}
+body.touch .topr .clock{order:-1;margin:0}body.touch .topr .stars{flex-basis:100%;text-align:right;font-size:17px}body.touch .topr .mdelta{display:none}
+body.touch .mp-online{top:calc(46px + var(--safe-t))!important;right:calc(10px + var(--safe-r))!important}
+body.touch:has(.topr .stars i) .mp-online{top:calc(72px + var(--safe-t))!important}
 body.touch .toasts{top:calc(214px + var(--safe-t));max-width:calc(100vw - 132px)}
 body.touch .toast{max-width:calc(100vw - 132px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 body.touch .notes .note:not(:first-child){display:none}   /* на телефоне — одно, последнее сообщение */
 @media (orientation:portrait) and (max-height:700px){body.touch .corner{gap:6px}body.touch .corner button{width:36px;height:36px;border-radius:11px}body.touch .corner button svg{width:18px;height:18px}}
-body.touch .timer{top:calc(132px + var(--safe-t))}body.touch .notes{top:calc(258px + var(--safe-t));right:calc(62px + var(--safe-r));width:auto;left:calc(10px + var(--safe-l));max-width:340px;margin-left:auto}
+body.touch .timer{top:calc(60px + var(--safe-t));right:auto;left:50%;transform:translateX(-50%);font-size:22px}
+body.touch .ac-ban{left:calc(10px + var(--safe-l));right:calc(62px + var(--safe-r));top:calc(258px + var(--safe-t));width:auto;max-width:340px;margin-left:auto;transform:translateY(-12px)}
+body.touch .ac-ban.on{transform:none}body.touch:has(.ac-ban.on) .notes{opacity:0}
+body.touch .note p{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+body.touch .notes{top:calc(258px + var(--safe-t));right:calc(62px + var(--safe-r));width:auto;left:calc(10px + var(--safe-l));max-width:340px;margin-left:auto}
+@media (orientation:portrait) and (max-height:700px){body.touch .toasts{top:calc(188px + var(--safe-t))}body.touch .notes,body.touch .ac-ban{top:calc(224px + var(--safe-t))}}
 /* тач-управление */
 #pad{position:fixed;inset:0;pointer-events:none;z-index:4}
 .stick{position:fixed;width:120px;height:120px;border-radius:50%;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);opacity:0;transition:opacity .15s;pointer-events:none}
@@ -203,10 +211,16 @@ body.touch #hud .prompt svg{width:22px;height:22px;flex:none}body.touch #hud .pr
   body.touch .miniwrap{width:86px;left:calc(10px + var(--safe-l));top:calc(8px + var(--safe-t))}body.touch .minimap{width:86px;height:86px}
   body.touch .corner{flex-direction:row;top:calc(8px + var(--safe-t));right:calc(150px + var(--safe-r))}
   body.touch .corner button{width:38px;height:38px;border-radius:12px}body.touch .corner button svg{width:19px;height:19px}
-  body.touch .mp-online{top:calc(46px + var(--safe-t))!important}
+  body.touch .corner{right:calc(200px + var(--safe-r))}
+  body.touch .mp-online{top:calc(152px + var(--safe-t))!important;left:calc(10px + var(--safe-l))!important;right:auto!important}
+  body.touch:has(.topr .stars i) .mp-online{top:calc(152px + var(--safe-t))!important}
+  body.touch .timer{top:calc(12px + var(--safe-t));left:auto;right:calc(434px + var(--safe-r));transform:none;font-size:20px}
   body.touch .toasts{top:calc(56px + var(--safe-t));left:calc(112px + var(--safe-l));transform:none;align-items:flex-start;max-width:40vw}
   body.touch .toast{max-width:40vw}
-  body.touch .notes{top:calc(70px + var(--safe-t));left:auto;right:calc(10px + var(--safe-r));width:min(300px,38vw)}
+  body.touch .notes{top:calc(46px + var(--safe-t));left:auto;right:calc(10px + var(--safe-r));width:min(300px,38vw)}
+  body.touch:has(.topr .stars i) .notes{top:calc(72px + var(--safe-t))}
+  body.touch .ac-ban{top:calc(46px + var(--safe-t));left:auto;right:calc(10px + var(--safe-r));width:min(300px,38vw)}
+  body.touch:has(.topr .stars i) .ac-ban{top:calc(72px + var(--safe-t))}   /* розыск — звёзды строкой под деньгами */
   body.touch .notes .note:not(:first-child){display:none}
   body.touch .help{top:calc(56px + var(--safe-t))}
   body.touch .objective{bottom:calc(14px + var(--safe-b));max-width:42vw;font-size:13px}

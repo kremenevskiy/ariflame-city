@@ -4,7 +4,7 @@
  *
  * Качество: ?q=low|mid|high; по умолчанию телефон — mid, компьютер — high; при FPS < 35 первые 8 с — ступень вниз.
  * Грабли шейдеров: NaN в одном пикселе свечение размазывает в чёрный прямоугольник —
- * только pow(max(x, 0.0), k) и smoothstep с a < b.
+ * только pow(max(x, 0.0), k) и smoothstep с a < b. Бесконечность от бликов — так же; вход свечения чистит safeHdr.
  */
 (function (global) {
   "use strict";
@@ -277,7 +277,25 @@
     composer.addPass(new T.RenderPass(scene, camera));
     bloom = new T.UnrealBloomPass(new T.Vector2(global.innerWidth / 2, global.innerHeight / 2), 0.45, 0.45, 0.92);
     composer.addPass(bloom);
-    composer.addPass(new T.OutputPass());
+    var outPass = new T.OutputPass();
+    composer.addPass(outPass);
+    safeHdr(bloom.materialHighPassFilter, outPass.material);
+  }
+  /* Блик солнца на гладком (стекло фасадов и машин, мокрый асфальт — шероховатость ~0,05) даёт тысячи единиц яркости;
+   * в буфере половинной точности это бесконечность. Свечение растягивало её по уровням размытия в прямоугольники,
+   * тонмаппинг делал из бесконечности NaN — мигающие чёрные блоки в полэкрана (23.11, Новая Боровая). Чистим вход
+   * свечения (бесконечность → потолок, NaN → 0, проверка по битам — её не выкидывает «быстрая математика» драйвера)
+   * и вход тонмаппинга (потолок). Блики остаются бликами, только без блоков и без вспышек на всё окно. */
+  function safeHdr(hp, out) {
+    var SAFE = "vec3 fcSafe(vec3 c) {\n#if __VERSION__ >= 300\n" +
+      "  highp uvec3 u = floatBitsToUint(c); bvec3 ex = equal(u & 0x7f800000u, uvec3(0x7f800000u)); bvec3 nm = notEqual(u & 0x007fffffu, uvec3(0u));\n" +
+      "  c = mix(c, vec3(16.0), ex); c = mix(c, vec3(0.0), bvec3(ex.x && nm.x, ex.y && nm.y, ex.z && nm.z));\n#endif\n" +
+      "  return clamp(c, 0.0, 16.0);\n}\n";
+    var TX = "vec4 texel = texture2D( tDiffuse, vUv );", OUT = "gl_FragColor = texture2D( tDiffuse, vUv );";
+    if (hp.fragmentShader.indexOf(TX) < 0 || out.fragmentShader.indexOf(OUT) < 0) { console.warn("fgfx: шейдеры свечения изменились — защита от бесконечности не встала"); return; }
+    hp.fragmentShader = hp.fragmentShader.replace("void main() {", SAFE + "void main() {").replace(TX, TX + " texel.rgb = fcSafe(texel.rgb);");
+    out.fragmentShader = out.fragmentShader.replace(OUT, OUT + " gl_FragColor.rgb = clamp(gl_FragColor.rgb, 0.0, 32.0);");
+    hp.needsUpdate = out.needsUpdate = true;
   }
 
   function resize() {
@@ -879,6 +897,25 @@
       if (fps < 32 && performance.now() - started < 12000 && Q.level !== "low") { downgraded = true; setQuality(Q.level === "high" ? "mid" : "low"); }
     }
     dynRes();
+    fpsTick();
+  }
+  /* ?fps — счётчик в углу: кадры в секунду, худший кадр за секунду, качество и масштаб рендера (для жалоб «лагает»). */
+  var fpsBox = null, fpsB = { t: 0, n: 0, worst: 0, last: 0 };
+  function fpsTick() {
+    if (fpsBox === null) {
+      fpsBox = false;
+      if (!/[?&]fps\b/.test(global.location.search || "")) return;
+      fpsBox = document.createElement("div");
+      fpsBox.style.cssText = "position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:99;font:600 11px/1.35 system-ui;color:#fff;" +
+        "background:rgba(0,0,0,.6);padding:3px 8px;border-radius:6px;pointer-events:none;white-space:pre;text-align:center";
+      document.body.appendChild(fpsBox); fpsB.last = performance.now(); return;
+    }
+    if (!fpsBox) return;
+    var now = performance.now(), d = now - fpsB.last; fpsB.last = now; fpsB.n++; fpsB.t += d; if (d > fpsB.worst) fpsB.worst = d;
+    if (fpsB.t < 1000) return;
+    fpsBox.textContent = Math.round(fpsB.n * 1000 / fpsB.t) + " к/с · худший кадр " + Math.round(fpsB.worst) + " мс\n" +
+      Q.level + (composer ? " + свечение" : "") + " · рендер ×" + (Q.ratio * drScale).toFixed(2);
+    fpsB.t = fpsB.n = fpsB.worst = 0;
   }
   /* Динамическое разрешение (всю игру, не только старт): кадры тяжёлые 2 с подряд (< ~36 к/с) — рендер на 10% мельче,
      до 0,6 от базы; лёгкие (> ~66 к/с) два окна подряд — обратно. Картинка чуть мягче, а движение плавное на слабом телефоне.

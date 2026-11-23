@@ -114,8 +114,11 @@
     BTN.forEach(function (b) {
       var el = document.createElement("button");
       el.type = "button"; el.className = "tbtn " + b[2]; label(el, b[1]); el.dataset.act = b[0];
+      // бег — с края джойстика (оранжевое кольцо), отдельная кнопка пешком лишняя; в машине она — нитро (fcars)
+      if (b[0] === "run") el.style.display = "none";
       el.addEventListener("touchstart", function (e) {
         e.preventDefault(); e.stopPropagation();
+        if (FC.fx) FC.fx.haptic("light");                  // отклик пальцу: Telegram — HapticFeedback, Android — vibrate
         if (b[0] === "run") { I.runToggle = !I.runToggle; el.classList.toggle("on", I.runToggle); return; }
         down(b[0]); el.classList.add("on");
       }, { passive: false });
@@ -243,6 +246,7 @@
         if (TG.isOrientationLocked && TG.unlockOrientation) { TG.unlockOrientation(); return "unlocked"; }
         if (TG.requestFullscreen && !TG.isFullscreen) TG.requestFullscreen();
         if (landNow && TG.lockOrientation) { TG.lockOrientation(); return "locked"; }
+        I.tgLockOnTurn = !landNow && !!TG.lockOrientation;   // замок держит только текущий поворот — закрепим, когда повернут
         return "rotate";
       }
       if (so && so.lock) {
@@ -258,6 +262,15 @@
   };
 
   /* ---- кадр: оси из клавиш или джойстика --------------------------------------------------------------- */
+  var sprintOn = false;
+  // телефон повернули — пальцы «теряются» (координаты другие): отпускаем джойстик и обзор, иначе герой идёт сам
+  global.addEventListener("resize", function () {
+    if (I.tgLockOnTurn && global.innerWidth > global.innerHeight) { I.tgLockOnTurn = false; try { TG.lockOrientation(); } catch (e) { /* старый клиент */ } }
+  });
+  global.addEventListener("orientationchange", function () {
+    stick.id = null; stick.x = stick.y = 0; lookTouch.id = null;
+    if (stickEl) toRest();
+  });
   function poll() {
     if (!I.enabled) { I.mx = I.mz = 0; I.run = false; return; }
     var kx = (held.rt ? 1 : 0) - (held.lf ? 1 : 0), kz = (held.fw ? 1 : 0) - (held.bw ? 1 : 0);
@@ -265,7 +278,9 @@
       var sx = stick.x, sz = -stick.y;
       if (kx || kz) { sx = kx; sz = kz; }
       I.mx = sx; I.mz = sz;
-      I.run = !!held.run || !!I.runToggle || Math.hypot(stick.x, stick.y) > 0.86;
+      var edge = stick.id !== null && Math.hypot(stick.x, stick.y) > 0.86;
+      I.run = !!held.run || !!I.runToggle || edge;
+      if (stickEl && edge !== sprintOn) { sprintOn = edge; stickEl.classList.toggle("sprint", edge); }
     } else {
       var m = Math.hypot(kx, kz) || 1;
       I.mx = kx / m; I.mz = kz / m; I.run = !!held.run;

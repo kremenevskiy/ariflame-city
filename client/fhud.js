@@ -55,6 +55,13 @@
   var objEl = el("div", "ui objective"); hud.appendChild(objEl);
   function objective(html) { objEl.innerHTML = html || ""; objEl.classList.toggle("on", !!html); }
   var promptEl = el("div", "ui prompt"); hud.appendChild(promptEl);
+  // на телефоне подсказка — сама кнопка: «Сесть», «Открыть», «Взять» с иконкой; тап = то же, что кнопка действия
+  promptEl.addEventListener("touchstart", function (e) {
+    e.preventDefault(); e.stopPropagation();
+    if (!current) return;
+    FC.input.tap(current.key === "car" ? "car" : "use");
+    if (FC.fx) FC.fx.haptic("light");
+  }, { passive: false });
   var timerEl = el("div", "ui timer"); hud.appendChild(timerEl);
   var timer = null;
   function setTimer(sec, label, onEnd) { timer = sec == null ? null : { left: sec, label: label || "", end: onEnd }; timerEl.classList.toggle("on", !!timer); }
@@ -665,11 +672,28 @@
       else togglePause(true);
     });
   });
-  // подсказка повернуть телефон (iPhone в Safari и Telegram — замка ориентации нет или он держит текущий поворот)
+  /* Поверни телефон (iPhone в Safari замка ориентации нет; Telegram закрепляет только текущий поворот): экран с
+     поворачивающимся телефоном, сам уходит, когда телефон повернули, по тапу или через 7 с. Игра не на паузе. */
+  var rotEl = null, rotT = 0;
   function rotateHint() {
     var land = global.innerWidth > global.innerHeight;
-    toast((land ? "Поверни телефон вертикально" : "Поверни телефон горизонтально") + " — интерфейс подстроится", "", 3);
+    if (!rotEl) {
+      rotEl = el("div", "ui rotlay");
+      rotEl.addEventListener("click", hideRot);
+      rotEl.addEventListener("touchstart", function (e) { e.preventDefault(); hideRot(); }, { passive: false });
+      document.body.appendChild(rotEl);
+    }
+    rotEl.className = "ui rotlay" + (land ? " back" : "");
+    rotEl.innerHTML = "<div class='rot-ph'><i></i></div><b>" + (land ? "Поверни телефон вертикально" : "Поверни телефон горизонтально") + "</b>" +
+      "<span>Не поворачивается — выключи блокировку поворота в Пункте управления</span>";
+    rotEl.dataset.land = land ? "1" : "0";
+    void rotEl.offsetWidth; rotEl.classList.add("on");
+    clearTimeout(rotT); rotT = setTimeout(hideRot, 7000);
   }
+  function hideRot() { if (rotEl) rotEl.classList.remove("on"); clearTimeout(rotT); }
+  global.addEventListener("resize", function () {
+    if (rotEl && rotEl.classList.contains("on") && (global.innerWidth > global.innerHeight ? "1" : "0") !== rotEl.dataset.land) hideRot();
+  });
   FC.on("input:rotate-hint", rotateHint);
 
   /* ---- кадр ----------------------------------------------------------------------------------------------------- */
@@ -707,7 +731,7 @@
       if (pickT <= 0) { pickT = 0.1; current = pickInteraction(); }
       if (current) {
         var key = current.key === "car" ? "F" : "E";
-        var ph = (I.touch ? "" : "<kbd>" + key + "</kbd> ") + esc(current.label);
+        var ph = (I.touch ? FC.icons(current.key === "car" ? "car" : "use") : "<kbd>" + key + "</kbd> ") + "<span>" + esc(current.label) + "</span>";
         if (ph !== lastPromptH) { promptEl.innerHTML = ph; lastPromptH = ph; }
         promptEl.classList.add("on");
         I.setButton(current.key === "car" ? "car" : "use", { hot: true });

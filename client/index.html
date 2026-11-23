@@ -184,6 +184,21 @@ body.touch .help{left:50%;right:auto;top:calc(172px + var(--safe-t));transform:t
 .stick.rest .knob{opacity:.8}
 body.touch .objective{bottom:calc(250px + var(--safe-b));font-size:14px}
 body.touch .prompt{bottom:calc(272px + var(--safe-b))}
+/* действие рядом — подписанная кнопка-«пилюля» (тап = кнопка действия): огненная, с иконкой, ≥44 px — видно, что жать */
+body.touch #hud .prompt{pointer-events:auto;display:flex;align-items:center;gap:8px;min-height:46px;box-sizing:border-box;padding:8px 18px 8px 12px;border:0;border-radius:23px;background:linear-gradient(180deg,#ffbb55,#ff7a2f);color:#2a1205;font:700 15px/1.2 system-ui,-apple-system,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,.32),0 0 0 3px rgba(255,170,80,.25);backdrop-filter:none;-webkit-backdrop-filter:none;transform:translateX(-50%) scale(.92);transition:opacity .15s,transform .15s}
+body.touch #hud .prompt.on{transform:translateX(-50%) scale(1)}body.touch #hud .prompt:active{transform:translateX(-50%) scale(.95)}
+body.touch #hud .prompt svg{width:22px;height:22px;flex:none}body.touch #hud .prompt span{overflow:hidden;text-overflow:ellipsis}
+/* бег с края джойстика — кольцо загорается */
+.stick.sprint{border-color:#ff9a3c;box-shadow:0 0 0 4px rgba(255,140,40,.28),0 0 22px rgba(255,140,40,.35)}.stick.sprint .knob{background:rgba(255,154,60,.85)}
+/* экран «поверни телефон» */
+.rotlay{position:fixed;inset:0;z-index:60;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;text-align:center;background:rgba(8,11,26,.72);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);opacity:0;pointer-events:none;transition:opacity .25s}
+.rotlay.on{opacity:1;pointer-events:auto}.rotlay b{font:600 24px/1.15 Oswald,"Arial Narrow",system-ui,sans-serif;text-transform:uppercase;color:#fff3df;text-shadow:0 2px 0 rgba(0,0,0,.4)}
+.rotlay span{max-width:300px;font:500 13px/1.35 system-ui,sans-serif;color:rgba(255,243,223,.7)}
+.rot-ph{width:46px;height:80px;border:3px solid #ffcf7a;border-radius:10px;position:relative;animation:rotph 1.8s ease-in-out infinite}.rot-ph i{position:absolute;left:50%;bottom:5px;width:12px;height:3px;margin-left:-6px;border-radius:2px;background:#ffcf7a}
+.rotlay.back .rot-ph{animation-name:rotphb}
+@keyframes rotph{0%,20%{transform:rotate(0)}55%,80%{transform:rotate(-90deg)}100%{transform:rotate(0)}}
+@keyframes rotphb{0%,20%{transform:rotate(-90deg)}55%,80%{transform:rotate(0)}100%{transform:rotate(-90deg)}}
+@media (prefers-reduced-motion:reduce){.rot-ph{animation:none}}
 @media (orientation:landscape) and (max-height:540px){
   body.touch .miniwrap{width:86px;left:calc(10px + var(--safe-l));top:calc(8px + var(--safe-t))}body.touch .minimap{width:86px;height:86px}
   body.touch .corner{flex-direction:row;top:calc(8px + var(--safe-t));right:calc(150px + var(--safe-r))}

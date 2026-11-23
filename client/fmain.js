@@ -91,6 +91,13 @@
     narrow = n; cam.want = FC.clamp(cam.want + (n ? 2.5 : -2.5), 3.5, 16);
   });
   var cam = { yaw: Math.PI, pitch: 0.32, dist: narrow ? 9.5 : 7, want: narrow ? 9.5 : 7, shakeA: 0, fov: 62, snap: true, idle: 0 };
+  // вертикальный угол, при котором горизонтальный обзор не шире 95°: ПК 16:9 — те же 62°, телефон лёжа (19.5:9) — ~53°
+  var H95 = Math.tan(95 / 2 * Math.PI / 180);
+  function baseFov() {
+    if (narrow) return 76;
+    var a = G.camera.aspect || 1.6;
+    return Math.min(62, 2 * Math.atan(H95 / a) * 180 / Math.PI);
+  }
   cam.shake = function (a) { cam.shakeA = Math.min(1.2, cam.shakeA + a); };
   FC.cam = cam;
   FC.on("input:zoom", function (d) { cam.want = FC.clamp(cam.want + d * 1.2, 3.5, 16); });
@@ -130,7 +137,7 @@
     // поле зрения шире на скорости
     var speed = car ? Math.hypot(car.vx, car.vz) : Math.hypot(P.vx, P.vz);
     var vmax = car ? car.spec.vmax : 9;
-    var fov = (narrow ? 72 : 62) + (car ? 16 : 10) * Math.pow(Math.min(speed / vmax, 1), 2);
+    var fov = baseFov() + (car ? 16 : 10) * Math.pow(Math.min(speed / vmax, 1), 2);
     if (!car && speed > 6.5) want += 0.6;                    // спринт: камера чуть отъезжает — скорость читается сильнее
     cam.fov = FC.damp(cam.fov, fov, 3, dt);
     if (Math.abs(G.camera.fov - cam.fov) > 0.05) { G.camera.fov = cam.fov; G.camera.updateProjectionMatrix(); }

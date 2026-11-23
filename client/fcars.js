@@ -893,7 +893,7 @@
     P.mode = "car"; P.car = car; P.vy = 0;
     drv.steer = 0; drv.rev = false;
     if (FC.audio) FC.audio.play("door");
-    I.setButton("car", { label: "🚪" }); I.setButton("jump", { label: "🅿️" }); I.setButton("punch", { show: false }); I.setButton("run", { label: "🔥" });
+    I.setButton("car", { label: "🚪" }); I.setButton("jump", { label: "🅿️" }); I.setButton("punch", { show: false }); I.setButton("run", { label: "🔥", show: true });
     I.runToggle = false;
     FC.emit("car:enter", { car: car, stolen: stolen });
     return true;
@@ -926,7 +926,7 @@
     P.x = pos[0]; P.z = pos[1]; P.y = 0.2; P.vx = force ? car.vx * 0.3 : 0; P.vz = force ? car.vz * 0.3 : 0;
     P.heading = car.heading;
     if (FC.audio) { FC.audio.play("door"); if (FC.audio.loop) FC.audio.loop("engine", false); }
-    I.setButton("car", { label: "🚗" }); I.setButton("jump", { label: "⤒" }); I.setButton("punch", { show: true }); I.setButton("run", { label: "🏃" });
+    I.setButton("car", { label: "🚗" }); I.setButton("jump", { label: "⤒" }); I.setButton("punch", { show: true }); I.setButton("run", { label: "🏃", show: false });
     I.runToggle = false; car.nitro = false;
     if (car.spec.moto || car.spec.fb === "tuk") { P.ch.scale = P.chScale || P.ch.scale; }
     FC.emit("car:exit", { car: car, force: !!force });

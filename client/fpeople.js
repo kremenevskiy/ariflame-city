@@ -207,7 +207,31 @@
    * в круге r (мимо домов, воды и проезжей части), стоят, смотрят по сторонам, кто-то в телефоне. Подходишь к якорю —
    * народ добирается (не на глазах: в кадре — только при старте и после перемещения, когда экран закрыт). */
   var anchors = [];
+  function lineAt(A, s, off) {
+    s = FC.clamp(s, 0, A.L);
+    for (var i = 0; i < A.line.length; i++) {
+      var g = A.line[i];
+      if (s <= g.s1 || i === A.line.length - 1) { var u = (s - g.s0) / (g.len || 1); return { x: g.x + g.dx * u * g.len - g.dz * off, z: g.z + g.dz * u * g.len + g.dx * off }; }
+    }
+    return { x: A.x, z: A.z };
+  }
+  function linePoint(A, ch) {
+    for (var k = 0; k < 10; k++) {
+      var s, off;
+      if (ch && ch.ls != null) {                                       // дальше по бульвару в ту же сторону, у края — разворот
+        s = ch.ls + (ch.ldir || 1) * R.range(8, 26);
+        if (s < 0 || s > A.L) { ch.ldir = -(ch.ldir || 1); s = FC.clamp(s, 0, A.L); }
+        off = FC.clamp(ch.loff + R.range(-1.6, 1.6), -A.w / 2 + 1.4, A.w / 2 - 1.4);
+      } else { s = R.range(0, A.L); off = R.range(-A.w / 2 + 1.4, A.w / 2 - 1.4); }
+      var q = lineAt(A, s, off);
+      if (M.water(q.x, q.z) || M.buildingAt(q.x, q.z, 0.8) || M.collide(q.x, q.z, 0.45, { noProps: true }).hit) continue;
+      if (ch) { ch.ls = s; ch.loff = off; }
+      q.s = s; q.off = off; return q;
+    }
+    return null;
+  }
   function strollPoint(A, near) {
+    if (A.line) return linePoint(A, near);
     for (var k = 0; k < 14; k++) {
       var a = R.range(0, 6.283), d = Math.sqrt(R()) * (near ? Math.min(14, A.r) : A.r);
       var x = (near ? near.x : A.x) + Math.cos(a) * d, z = (near ? near.z : A.z) + Math.sin(a) * d;
@@ -220,9 +244,9 @@
   function strollBrain(ch, dt) {
     if (ch.flee > 0 || ch.group) return false;                     // паника и драка — как у всех прохожих
     var A = ch.anchor;
-    if (ch.wait > 0) { ch.wait -= dt; ch.vx = ch.vz = 0; ch.speed = 0; return true; }
+    if (ch.wait > 0) { ch.wait -= dt; ch.vx = ch.vz = 0; ch.speed = 0; if (ch.wait <= 0) { ch.talk = null; ch.look = null; } return true; }
     if (!ch.goal2 || FC.dist2(ch.x, ch.z, ch.goal2.x, ch.goal2.z) < 1.5) {
-      ch.goal2 = strollPoint(A, R.chance(0.6) ? ch : null);
+      ch.goal2 = strollPoint(A, A.line || R.chance(0.6) ? ch : null);      // на бульваре — дальше по ходу
       if (R.chance(0.35)) { ch.wait = R.range(2, 9); return true; }   // постоять: посмотреть, позвонить
       if (!ch.goal2) { ch.wait = 3; return true; }
     }
@@ -230,15 +254,27 @@
     var c = M.collide(ch.x + dx / dl * v * dt, ch.z + dz / dl * v * dt, 0.35, { prev: ch });
     if (c.hit) ch.goal2 = null;
     ch.vx = (c.x - ch.x) / dt; ch.vz = (c.z - ch.z) / dt; ch.x = c.x; ch.z = c.z; ch.speed = v;
+    if (A.line && FC.places.surfaceAt) { var sf = FC.places.surfaceAt(ch.x, ch.z); ch.y = sf != null ? sf : 0.15; }
     return true;
   }
   function strollAdd(A, inView) {
     var at = strollPoint(A); if (!at) return null;
-    if (!inView && G.inView && G.inView(at.x, 1, at.z)) return null;
+    // на глазах не возникают: в кадре — только при старте/перемещении или вдали (дальше 110 м — маленькие)
+    var P = FC.player;
+    if (!inView && G.inView && G.inView(at.x, 1, at.z) && (!P || FC.dist2(at.x, at.z, P.x, P.z) < 110 * 110)) return null;
     var ch = make("ped", randomCell(R), at.x, at.z, { walk: R.range(1.0, 1.45) });
+    var sf0 = FC.places && FC.places.surfaceAt ? FC.places.surfaceAt(at.x, at.z) : null; if (sf0 != null) ch.y = sf0;
     ch.anchor = A; ch.brain = strollBrain; ch.wait = R.chance(0.4) ? R.range(0, 6) : 0;
+    if (A.line) { ch.ls = at.s; ch.loff = at.off; ch.ldir = R.chance(0.5) ? 1 : -1; }
     if (R.chance(0.3)) ch.phone = true;
     peds.push(ch);
+    if (R.chance(0.14)) {                                         // пара стоит и болтает 20–60 с
+      var b = make("ped", randomCell(R), at.x + 0.9, at.z + 0.4, { walk: R.range(1.0, 1.4) });
+      b.anchor = A; b.brain = strollBrain; if (A.line) { b.ls = at.s; b.loff = at.off; b.ldir = -ch.ldir; }
+      var t = R.range(20, 60); ch.wait = b.wait = t; ch.phone = false;
+      ch.talk = "talk"; b.talk = "listen"; ch.look = { x: b.x, z: b.z }; b.look = { x: ch.x, z: ch.z };
+      peds.push(b);
+    }
     return ch;
   }
   function stroll(x, z, r, n) {
@@ -246,9 +282,30 @@
     anchors.push(A);
     return A;
   }
+  // бульвар/улица мест (FC.places.streets): гуляют вдоль всей полосы шириной w, n человек
+  function strollLine(pts, w, n) {
+    var line = [], L = 0;
+    for (var i = 1; i < pts.length; i++) {
+      var ax = pts[i - 1][0], az = pts[i - 1][1], dx = pts[i][0] - ax, dz = pts[i][1] - az, len = Math.hypot(dx, dz) || 1;
+      line.push({ x: ax, z: az, dx: dx / len, dz: dz / len, len: len, s0: L, s1: L + len }); L += len;
+    }
+    var mid = pts[Math.floor(pts.length / 2)];
+    var A = { line: line, L: L, w: Math.max(4, w || 8), n: n || Math.min(40, Math.round(L / 7)), x: mid[0], z: mid[1], r: L / 2 + (w || 8) };
+    anchors.push(A);
+    return A;
+  }
+  function anchorD2(A, px, pz) {
+    if (!A.line) return FC.dist2(px, pz, A.x, A.z);
+    var best = 1e18;
+    A.line.forEach(function (g) {
+      var u = FC.clamp((px - g.x) * g.dx + (pz - g.z) * g.dz, 0, g.len), qx = g.x + g.dx * u, qz = g.z + g.dz * u;
+      best = Math.min(best, FC.dist2(px, pz, qx, qz));
+    });
+    return best;
+  }
   function strollTick(px, pz, fillP) {
     for (var i = 0; i < anchors.length; i++) {
-      var A = anchors[i], d2 = FC.dist2(px, pz, A.x, A.z);
+      var A = anchors[i], d2 = anchorD2(A, px, pz);
       if (d2 > 220 * 220) continue;
       var have = 0;
       for (var k = 0; k < peds.length; k++) if (peds[k].anchor === A) have++;
@@ -695,7 +752,7 @@
   }
 
   FC.people = {
-    all: all, peds: peds, agents: agents, make: make, remove: remove, spawnPed: spawnPed, stroll: stroll, hit: hit, panic: panic, say: say,
+    all: all, peds: peds, agents: agents, make: make, remove: remove, spawnPed: spawnPed, stroll: stroll, strollLine: strollLine, hit: hit, panic: panic, say: say,
     witnesses: witnesses, near: near, insideOf: insideOf, punch: punch, group: group, setCitizens: setCitizens, applyGoal: applyGoal, cellOf: cellOf, randomCell: randomCell,
     SPECIAL: SPECIAL, CODES: CODES, ICON: ICON, line: agentLine
   };

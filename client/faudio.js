@@ -153,6 +153,7 @@
       noise(0.35, 0.12 * v * p, "highpass", 4500, 1, null, 0.05);       // осколки стекла
     },
     skid: function (v) { noise(0.55, 0.14 * v, "bandpass", 2300, 7); },
+    splash: function (v) { noise(0.5, 0.3 * v, "lowpass", 1800, 0.8, null, 0, 420); noise(0.35, 0.1 * v, "highpass", 3800, 1, null, 0.04); },   // плюх в воду
     horn: function (v, o) {
       var d = o.dur || 0.45, f = ctx.createBiquadFilter(); f.type = "lowpass"; f.frequency.value = 1900; f.connect(sfx);
       tone("sawtooth", 349, null, d, 0.11 * v, f, 0, 0.02); tone("sawtooth", 440, null, d, 0.1 * v, f, 0, 0.02);

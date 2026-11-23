@@ -194,14 +194,21 @@
     var wx = -s * mz + c * mx, wz = -c * mz - s * mx;
     var m = Math.hypot(wx, wz);
     var inside = FC.inside && FC.inside.active;
-    var top = inside ? (I.run ? 6 : WALK_IN) : (I.run ? SPRINT : JOG);
+    // вода (23.11: «в воде плавать»): заходишь — плывёшь по грудь в воде, медленнее, без прыжка и кувырка
+    var swim = !inside && M.water(P.x, P.z) && !M.onRoad(P.x, P.z);
+    if (swim !== !!P.swim) {
+      P.swim = swim; if (P.ch) P.ch.swim = swim;
+      if (FC.fx && FC.fx.burst) FC.fx.burst(P.x, 0.05, P.z, "water", swim ? 22 : 8);
+      if (swim && FC.audio) FC.audio.play("splash");
+    }
+    var top = inside ? (I.run ? 6 : WALK_IN) : swim ? (I.run ? 3.4 : 2.4) : (I.run ? SPRINT : JOG);
     top *= P.speedMul || 1;
     // джойстик: скорость не линейна наклону — уже на трети хода почти бег (на телефоне палец редко держат до упора,
     // и «персонаж плетётся»), до упора — спринт (finput)
     var sp = top * (m < 0.05 ? 0 : Math.min(1, 0.45 + 0.75 * m));
     var tvx = m > 0.01 ? wx / m * sp : 0, tvz = m > 0.01 ? wz / m * sp : 0;
     rollCd -= dt;
-    if ((I.pressed("roll")) && roll <= 0 && rollCd <= 0 && P.onGround) {
+    if ((I.pressed("roll")) && roll <= 0 && rollCd <= 0 && P.onGround && !swim) {
       roll = 0.4; rollCd = 0.75; P.invuln = 0.4;
       if (FC.humans) FC.humans.play(P.ch, "roll", { rate: 2.6, prio: 2 });
       var hx = m > 0.05 ? wx / m : Math.sin(P.heading), hz = m > 0.05 ? wz / m : Math.cos(P.heading);
@@ -223,7 +230,7 @@
     // прыжок: запас времени после края и буфер нажатия
     coyote = P.onGround ? 0.12 : coyote - dt;
     jumpBuf = I.pressed("jump") ? 0.12 : jumpBuf - dt;
-    if (jumpBuf > 0 && coyote > 0) {
+    if (jumpBuf > 0 && coyote > 0 && !swim) {
       P.vy = 7.4; P.onGround = false; coyote = 0; jumpBuf = 0;
       if (FC.audio) FC.audio.play("jump");
     }
@@ -242,14 +249,15 @@
     }
     if (P.ch.land) P.ch.land = Math.max(0, P.ch.land - dt * 1.6);
     var nx = P.x + P.vx * dt, nz = P.z + P.vz * dt;
-    var col = inside ? FC.inside.collide(nx, nz, 0.35) : M.collide(nx, nz, 0.35, { prev: P });
+    var col = inside ? FC.inside.collide(nx, nz, 0.35) : M.collide(nx, nz, 0.35, { prev: P, water: false });
     P.x = col.x; P.z = col.z;
     if (FC.cars && FC.cars.pushOut) { var po = FC.cars.pushOut(P.x, P.z, 0.4); if (po) { P.x = po.x; P.z = po.z; } }
     // спринт: линии скорости, шире обзор (в updateCamera), пыль из-под ног
     var v = Math.hypot(P.vx, P.vz);
     if (FC.fx && v > JOG + 1 && !inside) FC.fx.speed((v - JOG) / (SPRINT - JOG) * 0.45);
     stepT -= dt * v;
-    if (stepT <= 0 && P.onGround && v > 1) {
+    if (swim && stepT <= 0 && v > 0.5) { stepT = 1.6; if (FC.fx && FC.fx.burst) FC.fx.burst(P.x, 0.05, P.z, "water", 3); }
+    else if (stepT <= 0 && P.onGround && v > 1) {
       stepT = 2.2;
       if (FC.audio) FC.audio.play("step", { vol: Math.min(1, v / 6) });
       if (FC.fx && v > JOG + 1 && !inside) FC.fx.burst(P.x, 0.18, P.z, "dust", 2);
@@ -260,6 +268,9 @@
   function groundY(x, z) {
     if (FC.inside && FC.inside.active) return FC.inside.floorY();
     if (M.onRoad(x, z)) return 0.04;
+    if (M.water(x, z)) return -1.05;                               // плывёт: над водой голова и плечи
+    var sf = FC.places && FC.places.surfaceAt ? FC.places.surfaceAt(x, z) : null;
+    if (sf != null) return sf;                                     // мощение бульвара мест — 0,25 м
     if (z > M.BEACH_Z0 && z < M.SEA_LINE) return 0.06;
     return 0.16;
   }

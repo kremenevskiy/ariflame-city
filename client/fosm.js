@@ -672,7 +672,11 @@
     for (var n = 0; n < 400 && J.i < bs.length; n++, J.i++) {
       var b = bs[J.i], p0 = pts(b[4]), bb = bbOf(p0), cx = (bb[0] + bb[2]) / 2, cz = (bb[1] + bb[3]) / 2;
       if (HQ_OLD != null && b[0] === HQ_OLD) continue;           // Башня Флейм перенесена (fmapx) — старой нет ни в мешах, ни в столкновениях
-      if (b[6] & 2 && b[2] < 2.5) J.items.push({ p: p0, x0: bb[0], z0: bb[1], x1: bb[2], z1: bb[3], h: b[1], mh: b[2], name: b[5], id: b[0], kind: b[3], pi: b[13], levels: b[14], st: b[11], fam: b[12], addr: b[17] || "" });
+      // Стена — только то, что нарисовано и стоит на земле (23.11: «на Маяке не пройти»). Контур дома с частями
+      // (флаг 2 без 1: башни на подиуме, корпуса с проходами и дворами) не рисуется — он остаётся записью дома (адрес,
+      // двери, владение), но не стеной; стенами становятся его нарисованные части от земли (флаг 1, низ ниже 2,5 м).
+      if (b[6] & 2 && b[2] < 2.5) J.items.push({ p: p0, x0: bb[0], z0: bb[1], x1: bb[2], z1: bb[3], h: b[1], mh: b[2], name: b[5], id: b[0], kind: b[3], pi: b[13], levels: b[14], st: b[11], fam: b[12], addr: b[17] || "", nocol: !(b[6] & 1) });
+      else if (b[6] === 1 && b[2] < 2.5) J.items.push({ p: p0, x0: bb[0], z0: bb[1], x1: bb[2], z1: bb[3], h: b[1], mh: b[2], id: b[0], colOnly: true });
       if (b[6] & 1 && !(masks.length && masked(cx, cz))) building(b, J, p0);
       if ((n & 15) === 15 && performance.now() - t0 > 4) { J.i++; break; }
     }
@@ -1041,7 +1045,34 @@
 
   /* ---- машины во дворах: места вдоль проездов и на стоянках; ставим через FC.cars, когда игрок рядом ---------- */
   var parked = [], PARK_COL = [0xc0c3c8, 0xf1f1ef, 0x2a2c30, 0x5b6068, 0x7a1f1f, 0x2b3f63, 0x3d4d3b, 0xb9a98a, 0x9aa0a6, 0xd9d9d6, 0x4a2a2a];
-  var PARK_T = ["sedan", "sedan", "sedan", "sedan", "van", "ev", "sedan", "taxi"];
+  /* Что стоит во дворе — по району (23.11: «Маяк — крутой район, тачки должны быть заряженные»). Уровни — по ценам
+   * жилья (элитный центр у пл. Победы, Немига, Верхний город и Троицкое, проспекты, новые кварталы «Маяк Минска»):
+   * 3 — премиум (люкс, бизнес, спорт, GT, электро, изредка суперкар; часть — заниженные), 2 — выше среднего,
+   * 1 — обычный спальный, 0 — заводские посёлки. Вес — сколько «билетов» у модели в лотерее места. */
+  var RICH = { "Маяк Минска": 3, "Верхний город": 3, "Немига": 3, "Троицкое": 3, "Центр": 3, "Проспект Победителей": 3,
+    "Проспект Независимости": 3, "Октябрьская": 3, "Зыбицкая": 3, "Дрозды": 3, "Мир-Сити": 2, "Комаровка": 2, "Восток": 2,
+    "Золотая Горка": 2, "Захарова-Пулихова": 2, "Новая Боровая": 2, "Зелёная гавань": 2, "Вокзал": 2,
+    "Тракторный завод": 0, "Тракторозаводской посёлок": 0, "Автозаводской Посёлок": 0, "Посёлок Велозавода": 0, "Шабаны": 0 };
+  var PARK_W = [
+    { eco: 4, stavr: 3, sedan: 3, van: 1.5, hanul: 2, bremer: 1, truck: 0.3 },
+    { sedan: 3, bremer: 2, vltava: 2, xd_gr: 2, kaze3: 1, xd_cool: 2, hanul: 1.5, tundrus: 0.7, yamaki: 0.6, ev_cube: 0.6, van: 0.5, taxi: 0.4, moto_c: 0.3 },
+    { yamaki: 2, kronw: 1.5, ingw: 1.5, rhein: 1, xd_atl: 2, xd_cool: 1.5, tundrus: 1.5, rhein_f: 1, ev: 1.5, xd_ev: 1, vltava: 1, kaze3: 1, kaze_rd: 0.5, ev_x: 0.5, moto: 0.3 },
+    { kronw_i: 2.5, ashbury: 2, kronw: 2, rhein: 2, ingw: 1.5, rhein_f: 2.5, tundrus: 1.5, ingw_st: 1.5, sport: 1.2, crewf: 1, kaze_rd: 1, muscle: 0.6,
+      ev_x: 1.5, ev_bolt: 1, ev: 1, tauro: 0.35, corsaro: 0.35, hyper: 0.15, moto: 0.5 }
+  ];
+  var RICH_COL = [0x111214, 0x1a1c20, 0xf4f4f2, 0x2b2f36, 0x5b6068, 0x0f2a4a, 0x3a0d12, 0xc9a24a, 0xe8e8e6, 0xff6a1a, 0x9be02a];
+  function tierAt(x, z) {
+    var d = M.district ? M.district(x, z) : null, n = d && d.name;
+    return n != null && RICH[n] != null ? RICH[n] : 1;
+  }
+  function parkPick(x, z, r) {
+    var t = tierAt(x, z), W = PARK_W[t], keys = Object.keys(W).filter(function (k) { return FC.cars.TYPES[k]; }), sum = 0;
+    keys.forEach(function (k) { sum += W[k]; });
+    var u = r * sum, type = keys[0];
+    for (var i = 0; i < keys.length; i++) { u -= W[keys[i]]; if (u <= 0) { type = keys[i]; break; } }
+    var rich = t === 3, col = rich ? RICH_COL[Math.floor(r * 977) % RICH_COL.length] : PARK_COL[Math.floor(r * 977) % PARK_COL.length];
+    return { type: type, opt: { parked: true, color: col, tune: rich && ((r * 31) % 1) < 0.35 ? { lower: true, color: col } : null } };
+  }
   function parkTick() {
     if (!FC.cars || !FC.cars.spawn || !FC.player) return;
     // во дворах: появляются до 200 м, в кадре — не ближе 170 м (на скорости не возникают перед носом), убираются за 250 м
@@ -1064,7 +1095,7 @@
       if (dsp < 20 * 20) continue;                                          // не прямо на глазах
       if (!fill && dsp < 170 * 170 && G.inView && G.inView(sp[0], 1, sp[1])) continue;
       if (M.buildingAt(sp[0], sp[1], 1.2) || FC.cars.list.some(function (c) { return FC.dist2(c.x, c.z, sp[0], sp[1]) < 9; })) { sp.used = true; continue; }
-      var r = sp[3], car = FC.cars.spawn(PARK_T[Math.floor(r * PARK_T.length) % PARK_T.length], sp[0], sp[1], sp[2], { parked: true, color: PARK_COL[Math.floor(r * 977) % PARK_COL.length] });
+      var r = sp[3], pk = parkPick(sp[0], sp[1], r), car = FC.cars.spawn(pk.type, sp[0], sp[1], sp[2], pk.opt);
       if (!car) break;
       sp.used = true; parked.push({ car: car, spot: sp });
     }
@@ -1140,7 +1171,9 @@
   }
 
   /* ---- столкновения: круг против многоугольника ------------------------------------------------------------ */
-  function near(x, z, r) {
+  // записи домов вокруг точки (без частей-«только стен»)
+  function near(x, z, r) { return nearAll(x, z, r).filter(function (it) { return !it.colOnly; }); }
+  function nearAll(x, z, r) {
     var out = [], seen = new Set();
     for (var gx = Math.floor((x - r) / GRID); gx <= Math.floor((x + r) / GRID); gx++)
       for (var gz = Math.floor((z - r) / GRID); gz <= Math.floor((z + r) / GRID); gz++) {
@@ -1161,9 +1194,10 @@
   }
   var q2 = [0, 0];
   function collide(x, z, r) {
-    var hit = false, nx = 0, nz = 0, list = near(x, z, r + 1);
+    var hit = false, nx = 0, nz = 0, list = nearAll(x, z, r + 1);
     for (var k = 0; k < list.length; k++) {
       var it = list[k];
+      if (it.nocol) continue;
       if (x < it.x0 - r || x > it.x1 + r || z < it.z0 - r || z > it.z1 + r) continue;
       var inside = pipP(x, z, it.p), best = edgeDist(it.p, x, z, q2);
       if (inside || best < r) {
@@ -1179,6 +1213,7 @@
     var list = near(x, z, pad + 1);
     for (var i = 0; i < list.length; i++) {
       var it = list[i];
+      if (it.nocol && pad > 0) continue;                       // контур с частями — не препятствие для проверок «рядом дом»
       if (x < it.x0 - pad || x > it.x1 + pad || z < it.z0 - pad || z > it.z1 + pad) continue;
       if (pipP(x, z, it.p) || (pad > 0 && edgeDist(it.p, x, z) <= pad)) return it;
     }
@@ -1251,7 +1286,7 @@
       Object.keys(signSrc).forEach(function (k) { var l = signSrc[k]; for (var i = 0; i < l.length; i++) if (Math.abs(l[i][0] - x) < r && Math.abs(l[i][2] - z) < r) out.push(l[i]); });
       return out;
     },
-    ready: true, meta: D, root: root, collide: collide, itemAt: itemAt, near: near, water: water,
+    ready: true, meta: D, root: root, collide: collide, itemAt: itemAt, near: near, water: water, tierAt: tierAt, parkPick: parkPick,
     chunksLoaded: function () { return Object.keys(loaded).length; },
     loadedKeys: function () { return Object.keys(loaded); },
     busy: function () { return !!job || queue.length > 0 || inflight > 0 || ready.length > 0; },

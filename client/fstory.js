@@ -552,7 +552,19 @@
     for (var d = 3.2; d <= 6.5; d += 1.1) {
       var x = g.x + rx * d, z = g.z + rz * d;
       if (M.water(x, z) || (M.buildingAt && M.buildingAt(x, z, 2.5)) || M.collide(x, z, 2.3, { noProps: true }).hit) continue;
-      guideCar = FC.cars.spawn(k, x, z, h + Math.PI / 2, { parked: true });            // боком к камере — видно всю машину
+      // носом туда, где свободно (23.11: машина стояла носом в стену — сел, газ, авария «и всё сломалось»): из четырёх
+      // направлений — самое открытое; при равенстве — боком к камере (видно всю машину)
+      var best = h + Math.PI / 2, bestRun = -1;
+      [h + Math.PI / 2, h - Math.PI / 2, h, h + Math.PI].forEach(function (a) {
+        var run = 0, ax = Math.sin(a), az = Math.cos(a);
+        for (var s = 2; s <= 30; s += 2) {
+          var qx = x + ax * s, qz = z + az * s;
+          if (M.water(qx, qz) || M.collide(qx, qz, 1.3, { noProps: true }).hit) break;
+          run = s;
+        }
+        if (run > bestRun + 4) { bestRun = run; best = a; }
+      });
+      guideCar = FC.cars.spawn(k, x, z, best, { parked: true });
       return;
     }
   }
@@ -656,6 +668,7 @@
     var g = guideSpot();
     // Макс — обычный человек (модель горожанина, всегда одно лицо), смотрит на игрока; рядом его машина
     guide = FC.people.make("npc", FC.people.SPECIAL.civ, g.x, g.z, { variant: FC.MASCOT.variant });
+    var sfg = FC.places && FC.places.surfaceAt ? FC.places.surfaceAt(g.x, g.z) : null; if (sfg != null) guide.y = sfg;
     var s0 = FC.places && FC.places.spawnAt; if (s0) guide.look = { x: s0.x, z: s0.z };
     placeCar(g);
     FC.interact.add({ id: "st-guide", x: g.x, z: g.z, r: 3.2, label: "Поговорить с Максом", when: function () { return !cur || cur.m.id !== "m1"; },

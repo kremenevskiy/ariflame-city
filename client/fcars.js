@@ -398,7 +398,8 @@
     var cs = circles(car), dx0 = prevX - car.x, dz0 = prevZ - car.z, worst = 0;
     for (var i = 0; i < cs.length; i++) {
       var c = cs[i];
-      var res = M.collide(c[0], c[1], c[2], { prev: { x: c[0] + dx0, z: c[1] + dz0 } });
+      // вода — не стена для машины игрока (23.11: «в воду можно»): въехал — вязнет и тонет (water() ниже); поток — как был
+      var res = M.collide(c[0], c[1], c[2], { prev: { x: c[0] + dx0, z: c[1] + dz0 }, water: car.driver === "player" || car.wet ? false : undefined });
       if (!res.hit) continue;
       var mx = res.x - c[0], mz = res.z - c[1];
       car.x += mx; car.z += mz;
@@ -796,7 +797,29 @@
     inp.boost = t.boost || 1;
     physSub(car, dt, inp);
   }
+  /* Машина в воде: брызги при въезде, вязнет (сопротивление растёт), через секунду глохнет, оседает до крыши за ~4 с;
+     через 7 с — утонула: игрок выплывает рядом (плывёт, fmain), машина остаётся на дне. Выехал на берег — всплывает. */
+  function water(car, dt, inp) {
+    var inW = M.water(car.x, car.z) && !M.onRoad(car.x, car.z);
+    if (!inW) { if (car.wet) { car.wet = 0; } if (car.y < 0) car.y = Math.min(0, car.y + dt * 0.8); return; }
+    if (!car.wet && FC.fx && FC.fx.burst) { FC.fx.burst(car.x, 0.1, car.z, "water", 46); if (FC.audio) FC.audio.play("splash"); }
+    car.wet = (car.wet || 0) + dt;
+    var k = Math.exp(-(1.2 + car.wet * 0.8) * dt);
+    car.vx *= k; car.vz *= k; car.w *= Math.exp(-2.5 * dt);
+    if (car.wet > 1.1 && inp) { inp.throttle = 0; inp.boost = 0; }
+    car.y = Math.max(-1.35, (car.y || 0) - dt * 0.34);
+    if (car.wet > 7 && !car.drowned) {
+      car.drowned = true; car.wrecked = true;
+      if (car.driver === "player") { exit(true); if (FC.hud) FC.hud.toast("Машина утонула — плыви к берегу", "", 3); }
+    }
+  }
+  function surface(car, dt) {
+    var s = FC.places && FC.places.surfaceAt ? FC.places.surfaceAt(car.x, car.z) : null, want = s != null ? s - 0.03 : 0;
+    car.gy = car.gy == null || dt <= 0 ? want : FC.damp(car.gy, want, 12, dt);
+  }
   function physSub(car, dt, inp) {
+    surface(car, dt);
+    if (car.driver === "player" || car.wet) water(car, dt, inp);
     var spd = Math.hypot(car.vx, car.vz);
     var n = Math.max(1, Math.min(8, Math.ceil(spd * dt / 0.45)));
     var h = dt / n;
@@ -1065,7 +1088,8 @@
       var pitchAll = car.pitch + (car.airPitch || 0);
       // вилли: поворот вокруг заднего колеса, а не центра — заднее колесо остаётся на асфальте
       var tu = car.tune, ws = tu && tu.wheels ? WHEEL_STYLE[tu.wheels] || WHEEL_STYLE.std : WHEEL_STYLE.std;
-      var y = (car.wrecked ? -0.08 : 0) + (car.y || 0) + (pitchAll < 0 ? Math.sin(-pitchAll) * S.wb / 2 : 0) +
+      if (car.gy == null) surface(car, 0);                       // стоящие без физики (во дворе, на бульваре) — тоже на плитке
+      var y = (car.wrecked ? -0.08 : 0) + (car.y || 0) + car.gy + (pitchAll < 0 ? Math.sin(-pitchAll) * S.wb / 2 : 0) +
         (ws.s - 1) * S.wr - (tu && tu.lower ? tu.lower * 0.07 : 0);
       vP.set(car.x, y, car.z);
       eA.set(pitchAll, car.heading, car.roll, "YXZ"); qA.setFromEuler(eA);

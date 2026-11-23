@@ -497,6 +497,7 @@
     if (ch.drive) return set1(hs, "drive", 1);
     if (ch.dance || (ch.life && ch.life.dance)) return set1(hs, "dance", 1);
     if (ch.kind === "player" && ch.air) return set1(hs, "air", 1);
+    if (ch.swim) return sp > 0.3 ? set1(hs, "jog", 0.6) : set1(hs, "idle2", 0.8);      // в воде по грудь: гребёт или держится
     var g = gaitOf(hs, sp);
     if (g === 0) {
       if (ch.hands) return set1(hs, "surrender", 1);

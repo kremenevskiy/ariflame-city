@@ -982,7 +982,7 @@
   /* ---- улицы и бульвары мест (streets): мощение, деревья-шары, лавки, фонари, фонтаны, скульптуры ------------------------
    * streets: [{points: [[x, z]…], width, paving: {a, b, tile}, rows: [{off, every, prop}], items: [{prop, x, z, r, h}]}]
    * prop: topiary (дерево-шар на стволе), tree, bench, lamp (вечером светится), planter, bollard; items: fountain, globe, statue. */
-  var streets = [], streetBuilt = new Map();
+  var streets = P.streets = [], streetBuilt = new Map();         // P.streets — для flive.js (люди, мотоциклы на бульварах)
   function pavingTex(P) {
     // крупные бетонные плиты: основной тон с лёгким разбросом по плитам, тонкие швы; второй тон — редкими полосами
     var t = canvasTex(256, 256, function (c, W, H) {
@@ -1081,6 +1081,19 @@
     return g;
   }
   P.addStreets = function (list) { (list || []).forEach(function (S) { if (S.points && S.points.length > 1) { var c = S.points[Math.floor(S.points.length / 2)]; S.cx = c[0]; S.cz = c[1]; streets.push(S); } }); };
+  // высота поверхности: на мощении бульвара — 0,25 м (машины, люди, герой стоят на плитке, а не в ней); иначе — null
+  P.surfaceAt = function (x, z) {
+    for (var i = 0; i < streets.length; i++) {
+      var S = streets[i], p = S.points, h = (S.width || 12) / 2;
+      if (S.paving === false || Math.abs(x - S.cx) > 600 || Math.abs(z - S.cz) > 600) continue;
+      for (var k = 1; k < p.length; k++) {
+        var ax = p[k - 1][0], az = p[k - 1][1], dx = p[k][0] - ax, dz = p[k][1] - az, L2 = dx * dx + dz * dz || 1;
+        var u = ((x - ax) * dx + (z - az) * dz) / L2; if (u < 0 || u > 1) continue;
+        var qx = ax + dx * u - x, qz = az + dz * u - z; if (qx * qx + qz * qz <= h * h) return 0.25;
+      }
+    }
+    return null;
+  };
   function streets_update(f, night) {
     streets.forEach(function (S) {
       var d = Math.hypot(S.cx - f.x, S.cz - f.z), g = streetBuilt.get(S);

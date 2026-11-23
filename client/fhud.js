@@ -591,7 +591,7 @@
       (M.attribution ? "<div class='row'><span>Карта</span><p class='quiet'>Минск 1:1 — данные " + esc(M.attribution) + " (ODbL)</p></div>" : "") +
       (FC.humans && FC.humans.credits ? "<div class='row'><span>Люди</span><p class='quiet'>" + esc(FC.humans.credits) + "</p></div>" : "") +
       "<div class='row'><span>Карта Минска</span><p class='quiet'>© участники OpenStreetMap, данные — лицензия ODbL 1.0</p></div>" +
-      "<div class='row'><span>Движок</span><p class='quiet'>three.js r160, лицензия MIT · игра — открытый код, MIT</p></div>" +
+      "<div class='row'><span>Движок</span><p class='quiet'>three.js r160, лицензия MIT · игра — открытый код, FSL-1.1-MIT</p></div>" +
       "<div class='row'><span>Прогресс</span><button type='button' id='reset' class='danger'>начать заново</button></div></div>";
     var sel = b.querySelector("#q-sel"); sel.value = G.Q.level;
     var cs = b.querySelector("#city-sel"); cs.value = FC.city || "flame";

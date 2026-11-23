@@ -2,7 +2,7 @@
  *
  * Ключ-арт города на весь экран (client/loader/<город>-<сцена>.webp, на телефоне — вертикальный «-p»; каждый заход —
  * другая сцена; у Минска — свой экран: белорусский указатель «Мінск / Minsk» и места города), дорожный указатель: выбранный город с обратным отсчётом «км до города» по ходу загрузки и второй город
- * кнопкой «Поехать», советы талисмана. Город — ?city=minsk|flame или выбранный раньше (localStorage fc.city) →
+ * кнопкой «Поехать», советы талисмана. Город — ?city=flame для вымышленного, иначе Минск (адрес /minsk — тоже Минск) →
  * window.FC_CITY (по нему index.html подгружает данные Минска).
  *
  * Ход загрузки честный, но сглаженный: скрипты страницы (≈60) → window.load → FCL.stage("start") (fmain: вход готов,
@@ -14,11 +14,11 @@
   var doc = global.document, L = doc.getElementById("loader");
 
   /* ---- город -------------------------------------------------------------------------------------------------- */
-  var q = null, c = null;
+  // по умолчанию — Минск (23.11: «сайт сразу открывает Минск»); вымышленный город — ?city=flame или кнопкой «Поехать»
+  // на указателе. Короткий адрес /minsk (client/minsk/index.html) ведёт сюда же с ?city=minsk.
+  var q = null;
   try { q = new URLSearchParams(global.location.search).get("city"); } catch (e) { q = null; }
-  try { c = q || global.localStorage.getItem("fc.city"); } catch (e) { c = q; }
-  var CITY = global.FC_CITY = c === "minsk" ? "minsk" : "flame";
-  if (q) { try { global.localStorage.setItem("fc.city", CITY); } catch (e) { /* приватное окно */ } }
+  var CITY = global.FC_CITY = q === "flame" ? "flame" : "minsk";
   // sign — подписи на указателе. Экран Минска — свой: указатель как на белорусских дорогах (название по-белорусски,
   // под ним латиницей), сверху — «Минск 1:1», картинки — узнаваемые места города.
   var CITIES = {
@@ -112,7 +112,6 @@
   setTimeout(markPainted, 1200);
 
   L.querySelector(".row.alt").addEventListener("click", function () {
-    try { global.localStorage.setItem("fc.city", OTHER); } catch (e) { /* приватное окно */ }
     var u = new URL(global.location.href); u.searchParams.set("city", OTHER); global.location.href = u.toString();
   });
 

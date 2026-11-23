@@ -39,6 +39,8 @@ function serve(req, res) {
   const file = path.resolve(ROOT, "." + p);
   if (file !== ROOT && !file.startsWith(ROOT + path.sep)) { res.writeHead(403); res.end(); return; }
   fs.stat(file, (err, st) => {
+    // папка без «/» на конце — как на боевом сервере: переадресация на «папка/» (короткие адреса вроде /minsk)
+    if (!err && st.isDirectory()) { const u = new URL(req.url, "http://x"); res.writeHead(301, { location: u.pathname + "/" + u.search }); res.end(); return; }
     if (err || !st.isFile()) { res.writeHead(404, { "content-type": "text/plain; charset=utf-8" }); res.end("нет файла"); return; }
     res.writeHead(200, { "content-type": TYPES[path.extname(file).toLowerCase()] || "application/octet-stream",
       "content-length": st.size, "cache-control": "no-cache" });

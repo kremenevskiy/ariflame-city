@@ -17,6 +17,7 @@
   m: 0 пешком, 1 в машине, 2 внутри, 3 в воздухе (c — тип аппарата fair.js), 4 под парашютом; c — тип машины;
   k — цвет; b — здание; a — анимация; w — звёзды розыска. Воздух — шире границы (±AIR_LIM, до AIR_Y м).
 HTTP: GET /g/health, /g/stats, /g/top; POST /g/save {token, save, creature?}, /g/load {token}.
+Правки без GitHub (contrib.py, 24.11.2026): POST /g/contrib, GET /g/contrib/<id> — очередь для contrib-intake.yml.
 Недвижимость (realty.py, homes.py): /g/props, /g/prop/*, /g/biz/*, /g/season* — здания обоих городов, бизнесы, «Передел».
 Фоторежим и календарь (22.11.2026 v3): POST /g/photo (кадр для сторис, 48 ч), GET /g/p/<id>.jpg, GET /g/events (неделя) —
 media.py, events.py.
@@ -49,6 +50,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import modes as fcmodes  # noqa: E402
 import media  # noqa: E402 — кадры фоторежима (/g/photo, /g/p/<id>)
 import events as fcevents  # noqa: E402 — календарь недели (/g/events)
+import contrib  # noqa: E402 — правки без GitHub (/g/contrib → contrib-intake.yml открывает PR)
 
 # Имена кодов облика (необязательный набор видов). Пусто — ники «Игрок»/«Гость».
 CREATURE_NAMES: dict[str, str] = {}
@@ -468,7 +470,8 @@ app.include_router(MODES.router())
 @app.middleware("http")
 async def limit_body(request: Request, call_next):
     n = request.headers.get("content-length")
-    cap = media.PHOTO_MAX + 4096 if request.url.path == "/g/photo" else SAVE_MAX + 8192   # кадр фоторежима — до 1,5 МБ
+    path = request.url.path    # кадр фоторежима — до 1,5 МБ, правка с сайта (contrib.py) — до 1,4 МБ
+    cap = media.PHOTO_MAX + 4096 if path == "/g/photo" else contrib.BODY_MAX if path == "/g/contrib" else SAVE_MAX + 8192
     if n and n.isdigit() and int(n) > cap:
         return Response('{"detail":"слишком большой запрос"}', status_code=413, media_type="application/json")
     return await call_next(request)
@@ -676,6 +679,10 @@ app.include_router(realty.make_router(db, verify, _body, where, MODES))
 PHOTOS = os.environ.get("FC_PHOTOS") or os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "photos")
 app.include_router(media.make_router(verify, lambda: PHOTOS))
 app.include_router(fcevents.router())
+# Правки без GitHub (страница contribute.html и навык для ИИ): очередь — папка contrib/ рядом с базой (FC_CONTRIB — своя),
+# забирает её GitHub Actions по ключу FC_CONTRIB_KEY (contrib.py, .github/workflows/contrib-intake.yml).
+CONTRIB_DIR = os.environ.get("FC_CONTRIB") or os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "contrib")
+app.include_router(contrib.make_router(lambda: CONTRIB_DIR))
 
 # Уровни, рейтинги, достижения, кланы, война за районы (22.11.2026): progress.py, crews.py, war.py. Уровень и тег клана —
 # в табличке над головой (Client.meta); сменились — сбрасываем «известность» у соседей, и tick пришлёт meta заново.

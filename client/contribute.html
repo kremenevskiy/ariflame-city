@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Сделай город лучше — Флейм-Сити</title>
+<meta name="description" content="Сделай правку игры со своим ИИ — ChatGPT, Claude или любым другим, даже без GitHub. Мы откроем pull request, проверим и выкатим.">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Флейм-Сити">
+<meta property="og:locale" content="ru_RU">
+<meta property="og:url" content="https://city.ariflame.com/contribute.html">
+<meta property="og:title" content="Флейм-Сити — сделай город лучше со своим ИИ">
+<meta property="og:description" content="Без GitHub и программирования: скопируй навык в ChatGPT или Claude, расскажи идею, отправь файл — правка попадёт в игру.">
+<meta property="og:image" content="https://city.ariflame.com/brand/og-status.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:image" content="https://city.ariflame.com/brand/og-status.jpg">
+<link rel="icon" type="image/png" sizes="32x32" href="brand/favicon-32.png">
+<link rel="apple-touch-icon" href="brand/apple-touch-icon.png">
+<!-- Правки без GitHub (24.11): навык для ИИ — dev/skill.md (пакет кода — tools/dev-pack.cjs), приём — POST /g/contrib
+     (server/contrib.py), PR открывает .github/workflows/contrib-intake.yml. Статус правки — эта же страница с #номером. -->
+<style>
+@font-face{font-family:Oswald;font-weight:600;font-display:swap;src:url(fonts/oswald-cyrillic-600-normal.woff2) format("woff2");unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116}
+@font-face{font-family:Oswald;font-weight:600;font-display:swap;src:url(fonts/oswald-latin-600-normal.woff2) format("woff2");unicode-range:U+0000-00FF,U+2000-206F}
+:root{
+  --night:#0a0f22;--panel:rgba(17,26,54,.82);--line:rgba(255,243,223,.12);--sign:#0d56a3;--ember:#ffb347;--flame:#ff7a2f;
+  --warm:#fff3df;--muted:rgba(255,243,223,.66);--ok:#5ee08f;--bad:#ff5d6c;--run:#ffd166;
+  --disp:Oswald,"Arial Narrow","Roboto Condensed",system-ui,sans-serif;--body:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--night);color:var(--warm);font:400 15px/1.5 var(--body);-webkit-font-smoothing:antialiased}
+a{color:inherit}
+.wrap{width:min(860px,100%);margin:0 auto;padding:0 16px}
+:focus-visible{outline:3px solid var(--ember);outline-offset:3px}
+
+.hero{position:relative;overflow:hidden;isolation:isolate;padding:0 0 26px}
+.hero img.bg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:-2}
+.hero::after{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(180deg,rgba(10,15,34,.35),rgba(10,15,34,.82) 55%,var(--night)),radial-gradient(120% 70% at 10% 100%,rgba(255,122,47,.3),transparent 60%)}
+.top{display:flex;justify-content:space-between;align-items:center;padding:14px 0 70px}
+.brand{display:flex;gap:10px;align-items:center;font:600 18px/1 var(--disp);letter-spacing:.04em;text-transform:uppercase;text-decoration:none}
+.brand img{width:30px;height:30px;border-radius:8px}
+.play{font:600 15px/1 var(--disp);letter-spacing:.05em;text-transform:uppercase;text-decoration:none;background:linear-gradient(180deg,var(--ember),var(--flame));color:#2a1205;padding:11px 18px;border-radius:10px;box-shadow:0 6px 24px rgba(255,122,47,.35)}
+h1{margin:0;font:600 clamp(40px,8vw,76px)/.95 var(--disp);text-transform:uppercase;text-shadow:0 4px 0 rgba(0,0,0,.35),0 0 40px rgba(255,140,40,.35)}
+.lead{margin:14px 0 0;max-width:640px;font-size:17px;color:var(--muted)}.lead b{color:var(--warm)}
+
+section{padding:26px 0}
+h2{margin:0 0 14px;font:600 28px/1 var(--disp);text-transform:uppercase;letter-spacing:.02em}
+.steps{display:grid;gap:12px;counter-reset:s}
+.step{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px 16px 64px}
+.step::before{counter-increment:s;content:counter(s);position:absolute;left:14px;top:14px;width:36px;height:36px;display:grid;place-items:center;border-radius:8px;background:var(--sign);border:2px solid rgba(255,255,255,.85);font:600 20px/1 var(--disp)}
+.step h3{margin:2px 0 6px;font:600 19px/1.15 var(--disp);text-transform:uppercase;letter-spacing:.03em}
+.step p{margin:6px 0;color:var(--muted)}.step p b{color:var(--warm)}
+.row{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:44px;text-decoration:none;font:600 14px/1 var(--body);padding:10px 14px;border-radius:10px;background:rgba(255,243,223,.08);border:1px solid var(--line);color:var(--warm);cursor:pointer}
+.btn.hot{background:linear-gradient(180deg,var(--ember),var(--flame));color:#2a1205;border:0;box-shadow:0 6px 20px rgba(255,122,47,.3)}
+.btn:disabled{opacity:.55;cursor:default}
+.rule{margin-top:12px;border-left:4px solid var(--flame);background:rgba(255,122,47,.08);border-radius:0 12px 12px 0;padding:12px 14px}
+.rule h3{margin:0 0 6px;font:600 17px/1.2 var(--disp);text-transform:uppercase;letter-spacing:.03em;color:var(--ember)}
+.rule ul{margin:6px 0 0;padding-left:20px}.rule li{margin:3px 0}
+
+form{display:grid;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}
+label{display:grid;gap:6px;font-weight:600}
+label small,.hint{font-weight:400;color:var(--muted);font-size:13px}
+input[type=text],textarea,select{width:100%;font:inherit;color:var(--warm);background:rgba(10,15,34,.7);border:1px solid rgba(255,243,223,.22);border-radius:10px;padding:11px 12px;min-height:44px}
+textarea{min-height:110px;resize:vertical}
+textarea.code{font:13px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;min-height:140px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.drop{display:grid;place-items:center;text-align:center;gap:6px;min-height:120px;border:2px dashed rgba(255,179,71,.5);border-radius:14px;padding:16px;cursor:pointer;background:rgba(255,179,71,.05)}
+.drop.over{background:rgba(255,179,71,.14)}
+.drop b{font:600 18px/1.2 var(--disp);text-transform:uppercase;letter-spacing:.03em}
+.drop input{position:absolute;width:1px;height:1px;opacity:0}
+.or{text-align:center;color:var(--muted);font-size:13px}
+.agree{display:flex;gap:10px;align-items:flex-start;font-weight:400}
+.agree input{width:22px;height:22px;flex:none;margin-top:1px;accent-color:var(--flame)}
+.err{color:var(--bad);font-weight:600;min-height:1em}
+
+.status{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:18px}
+.status h3{margin:0 0 4px;font:600 22px/1.15 var(--disp);text-transform:uppercase}
+.track{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:14px 0 10px}
+.track span{font:600 12px/1.2 var(--body);text-align:center;padding:8px 4px;border-radius:8px;background:rgba(255,243,223,.06);color:var(--muted)}
+.track span.done{background:var(--sign);color:#fff}.track span.now{background:linear-gradient(180deg,var(--ember),var(--flame));color:#2a1205}
+.track span.no{background:rgba(255,93,108,.2);color:var(--bad)}
+.mine{display:grid;gap:6px;margin-top:10px}.mine a{color:var(--muted)}.status a{overflow-wrap:anywhere}
+footer{border-top:1px solid var(--line);padding:22px 0 40px;color:var(--muted);font-size:13px}
+@media (max-width:620px){.two{grid-template-columns:1fr}.step{padding-left:56px}.step::before{left:10px}.top{padding-bottom:40px}.track{grid-template-columns:1fr 1fr}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<header class="hero">
+  <img class="bg" src="loader/minsk-mayak.webp" alt="" aria-hidden="true">
+  <div class="wrap">
+    <div class="top"><a class="brand" href="./"><img src="brand/icon-192.png" alt="">Флейм-Сити</a><a class="play" href="./">Играть</a></div>
+    <h1>Сделай город лучше со своим ИИ</h1>
+    <p class="lead">Без GitHub и без программирования. Твой ChatGPT, Claude или любой другой ИИ сам изучит код игры, задаст
+      вопросы и сделает правку. Ты отправишь её сюда — мы откроем pull request, автоматически проверим игру на компьютере
+      и телефоне, и после одобрения <b>правка уедет в город у всех</b>.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section id="st" hidden aria-live="polite"></section>
+
+  <section aria-labelledby="how">
+    <h2 id="how">Как это работает</h2>
+    <div class="steps">
+      <div class="step">
+        <h3>Дай своему ИИ навык</h3>
+        <p>Навык — инструкция, по которой ИИ работает как разработчик игры: читает код, спрашивает, думает, делает правку
+          по правилам проекта.</p>
+        <div class="row">
+          <button class="btn hot" type="button" id="copy">Скопировать навык</button>
+          <a class="btn" href="dev/skill.md" target="_blank" rel="noopener">Открыть текст</a>
+          <a class="btn" href="dev/flame-city-skill.zip" download>Навык для Claude (.zip)</a>
+        </div>
+        <p class="hint" id="copied" role="status"></p>
+        <p><b>ChatGPT:</b> вставь текст в начало нового чата или в инструкции своего GPT. <b>Claude:</b> вставь текст в чат или
+          загрузи .zip в «Настройки → Возможности → Навыки». <b>Любой другой ИИ:</b> просто вставь текст.</p>
+      </div>
+      <div class="step">
+        <h3>Расскажи, что хочешь</h3>
+        <p>Словами или голосом: «на Маяке хочу кафе с летней верандой», «машины слишком медленно разгоняются», «добавь
+          людей на Немигу». ИИ уточнит детали, изучит код (весь код — <a href="dev/llms.txt">одной страницей ссылок</a> или
+          <a href="dev/flame-city-src.zip">одним архивом</a>) и сделает правку.</p>
+      </div>
+      <div class="step">
+        <h3>Отправь файл сюда</h3>
+        <p>ИИ отдаст архив .zip с файлами (или текст правки — git diff). Прикрепи его ниже, напиши в двух словах, что это, —
+          и всё. Появится ссылка на твою правку: по ней видно, когда она станет pull request.</p>
+      </div>
+    </div>
+    <div class="rule">
+      <h3>Правило «только лучше»</h3>
+      <p>Правка делает игру лучше: чинит, дорабатывает, добавляет, ускоряет, делает красивее и удобнее.</p>
+      <ul>
+        <li>Нельзя удалять код и файлы, «вычищать» игру и выключать то, что уже есть: механики, места, машины, режимы.
+          Мешает — предложи починить или сделать настройку.</li>
+        <li>Без политики, настоящих брендов и людей, рекламы, крови и 18+. Правила целиком — в
+          <a href="dev/src/AGENTS.md">AGENTS.md</a>.</li>
+      </ul>
+      <p class="hint">Навык учит ИИ отказываться от таких правок, а сайт и автоматические проверки отклоняют их сами.</p>
+    </div>
+  </section>
+
+  <section aria-labelledby="send">
+    <h2 id="send">Отправить правку</h2>
+    <form id="f" novalidate>
+      <label class="drop" id="drop" tabindex="0">
+        <input type="file" id="file" accept=".zip,.patch,.diff,.txt">
+        <b id="fileLbl">Прикрепи файл от ИИ</b>
+        <span class="hint" id="fileHint">.zip с файлами по путям client/… и docs/… или .patch/.diff — до 1 МБ</span>
+      </label>
+      <div class="or">или вставь текст правки (git diff)</div>
+      <textarea class="code" id="patch" placeholder="--- a/client/fstory.js&#10;+++ b/client/fstory.js&#10;@@ …" spellcheck="false" aria-label="Текст правки (git diff)"></textarea>
+      <label>Что это за правка <small>коротко, как заголовок</small>
+        <input type="text" id="title" maxlength="90" placeholder="Летняя веранда у кафе на Маяке" required></label>
+      <label>Что и зачем <small>как это изменит игру и как проверить</small>
+        <textarea id="idea" maxlength="3000" placeholder="На бульваре Маяка мало мест посидеть. Добавил веранду со столиками и людьми — подойди к кафе у арки." required></textarea></label>
+      <div class="two">
+        <label>Ник <small>будет в pull request</small><input type="text" id="author" maxlength="40" autocomplete="nickname"></label>
+        <label>Каким ИИ сделано
+          <select id="tool"><option>ChatGPT</option><option>Claude</option><option>Gemini</option><option>DeepSeek</option><option>Другой ИИ</option><option>Сам, без ИИ</option></select></label>
+      </div>
+      <label>Как с тобой связаться <small>необязательно; Telegram или почта — увидит только мейнтейнер</small>
+        <input type="text" id="contact" maxlength="80" autocomplete="off"></label>
+      <label class="agree"><input type="checkbox" id="agree"><span>Правка делает игру лучше и соблюдает правила. Отдаю её
+        проекту на условиях <a href="dev/src/LICENSE">лицензии</a> и <a href="dev/src/CLA.md">соглашения участника</a>.</span></label>
+      <p class="err" id="err" role="alert"></p>
+      <div class="row"><button class="btn hot" type="submit" id="go">Отправить правку</button></div>
+    </form>
+    <div class="mine" id="mine"></div>
+  </section>
+</main>
+<footer><div class="wrap">Флейм-Сити строят игроки · <a href="status.html">статус города</a> · <a href="./">играть</a></div></footer>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var API = "g/contrib", picked = null;
+  var esc = function (s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); };
+  function store(k, v) { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || "null"); localStorage.setItem(k, JSON.stringify(v)); } catch (e) { return null; } }
+
+  // навык — в буфер обмена (текст берём с сайта, тот же, что видит ИИ)
+  $("copy").addEventListener("click", function () {
+    fetch("dev/skill.md").then(function (r) { if (!r.ok) throw 0; return r.text(); }).then(function (t) {
+      return navigator.clipboard.writeText(t).then(function () { $("copied").textContent = "Скопировано. Вставь в свой ИИ и расскажи идею."; });
+    }).catch(function () { $("copied").textContent = "Не скопировалось — открой текст и скопируй вручную."; });
+  });
+
+  // файл: .zip — архивом (сервер распакует), .patch/.diff/.txt — текстом
+  function take(f) {
+    if (!f) return;
+    var zip = /\.zip$/i.test(f.name);
+    if (f.size > (zip ? 1000000 : 400000)) { $("err").textContent = "Файл больше " + (zip ? "1 МБ" : "400 КБ") + " — попроси ИИ разбить правку на части."; return; }
+    var rd = new FileReader();
+    rd.onload = function () {
+      picked = zip ? { zip: String(rd.result).split(",")[1] } : { patch: String(rd.result) };
+      $("fileLbl").textContent = f.name; $("fileHint").textContent = (f.size / 1024).toFixed(0) + " КБ · нажми, чтобы выбрать другой"; $("err").textContent = "";
+    };
+    if (zip) rd.readAsDataURL(f); else rd.readAsText(f);
+  }
+  $("file").addEventListener("change", function () { take(this.files[0]); });
+  var drop = $("drop");
+  ["dragenter", "dragover"].forEach(function (k) { drop.addEventListener(k, function (e) { e.preventDefault(); drop.classList.add("over"); }); });
+  ["dragleave", "drop"].forEach(function (k) { drop.addEventListener(k, function (e) { e.preventDefault(); drop.classList.remove("over"); }); });
+  drop.addEventListener("drop", function (e) { take(e.dataTransfer.files[0]); });
+  drop.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } });
+
+  var draft = store("fc.contrib.draft") || {};
+  ["title", "idea", "author", "contact", "tool"].forEach(function (k) { if (draft[k]) $(k).value = draft[k]; $(k).addEventListener("input", save); });
+  function save() { store("fc.contrib.draft", { title: $("title").value, idea: $("idea").value, author: $("author").value, contact: $("contact").value, tool: $("tool").value }); }
+
+  $("f").addEventListener("submit", function (e) {
+    e.preventDefault();
+    var body = { title: $("title").value.trim(), idea: $("idea").value.trim(), author: $("author").value.trim(), contact: $("contact").value.trim(), tool: $("tool").value, agree: $("agree").checked };
+    var patch = $("patch").value.trim();
+    if (picked) Object.assign(body, picked); else if (patch) body.patch = patch + "\n";
+    var why = !picked && !patch ? "Прикрепи файл от ИИ или вставь текст правки." : body.title.length < 4 ? "Напиши, что это за правка (от 4 знаков)." :
+      body.idea.length < 10 ? "Напиши, что и зачем (от 10 знаков)." : !body.agree ? "Отметь согласие с правилами." : "";
+    $("err").textContent = why; if (why) return;
+    $("go").disabled = true; $("go").textContent = "Отправляю…";
+    fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) {
+          if (r.status === 413) throw new Error("Правка слишком большая — попроси ИИ прислать только изменённые файлы или разбить её на части.");
+          if (!r.ok) throw new Error(j.detail || ("Сервер ответил " + r.status + " — попробуй ещё раз позже."));
+          return j;
+        });
+      })
+      .then(function (j) {
+        var mine = store("fc.contrib.mine") || []; mine.unshift({ id: j.id, title: body.title, at: Date.now() }); store("fc.contrib.mine", mine.slice(0, 20));
+        store("fc.contrib.draft", {}); $("f").reset(); picked = null; $("fileLbl").textContent = "Прикрепи файл от ИИ";
+        location.hash = j.id; show(j.id); listMine();
+      })
+      .catch(function (er) { $("err").textContent = typeof er.message === "string" ? er.message : "Не отправилось — проверь интернет и попробуй ещё раз."; })
+      .then(function () { $("go").disabled = false; $("go").textContent = "Отправить правку"; });
+  });
+
+  // статус правки по ссылке #номер
+  var STEPS = [["pending", "Принята"], ["taken", "Проверяется"], ["pr", "Pull request"], ["merged", "В игре"]], poll = 0;
+  function show(id) {
+    var box = $("st"); box.hidden = false;
+    fetch(API + "/" + encodeURIComponent(id)).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (d) {
+      var at = { pending: 0, taken: 1, pr: 2 }[d.status], no = d.status === "rejected";
+      var track = STEPS.map(function (s, i) { return "<span class='" + (no ? (i === 0 ? "done" : i === 1 ? "no" : "") : i < at ? "done" : i === at ? "now" : "") + "'>" + (no && i === 1 ? "Отклонена" : s[1]) + "</span>"; }).join("");
+      var what = no ? "<p><b>Почему:</b> " + esc(d.reason || "не прошла проверки") + "</p><p class='hint'>Покажи эту причину своему ИИ — он поправит, и отправь правку заново.</p>" :
+        d.status === "pr" ? "<p>Открыт pull request — мейнтейнер посмотрит, проверки уже идут. После слияния правка сама уедет в игру.</p>" +
+          (d.pr_url ? "<div class='row'><a class='btn' href='" + esc(d.pr_url) + "' target='_blank' rel='noopener'>Открыть pull request</a></div>" : "") :
+        "<p>Правка в очереди. Раз в 15 минут робот накладывает её на свежую версию игры, проверяет и открывает pull request — эта страница обновится сама.</p>";
+      box.innerHTML = "<div class='status'><h3>" + esc(d.title) + "</h3><p class='hint'>Правка " + esc(d.id) + " · файлы: " + esc((d.files || []).join(", ")) + "</p><div class='track'>" + track + "</div>" + what +
+        "<p class='hint'>Ссылка на эту правку: <a href='#" + esc(d.id) + "'>" + esc(location.origin + location.pathname + "#" + d.id) + "</a></p></div>";
+      clearTimeout(poll); if (d.status === "pending" || d.status === "taken") poll = setTimeout(function () { show(id); }, 30000);
+    }).catch(function () { box.innerHTML = "<div class='status'><h3>Правка не найдена</h3><p class='hint'>Проверь ссылку.</p></div>"; });
+  }
+  function listMine() {
+    var mine = store("fc.contrib.mine") || [];
+    $("mine").innerHTML = mine.length ? "<p class='hint'>Мои правки:</p>" + mine.map(function (m) { return "<a href='#" + esc(m.id) + "'>" + esc(m.title) + "</a>"; }).join("") : "";
+  }
+  function route() { var id = location.hash.slice(1); if (/^[A-Za-z0-9_-]{12}$/.test(id)) { show(id); $("st").scrollIntoView({ behavior: "smooth" }); } }
+  window.addEventListener("hashchange", route);
+  route(); listMine();
+})();
+</script>
+</body>
+</html>

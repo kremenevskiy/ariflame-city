@@ -4,7 +4,14 @@
 вливает — и изменение само уезжает на сайт. Всё видно в прямом эфире на странице
 [статуса города](https://city.ariflame.com/status.html). Issues и pull requests — на русском и на английском.
 
-## Четыре способа
+## Главное правило — «только лучше»
+
+Город только растёт: правка чинит, дорабатывает, добавляет, ускоряет или делает красивее. Удалять код и файлы,
+выключать или убирать механики, места, машины и режимы, замедлять игру на телефоне — нельзя, даже «ненужное»: мешает —
+предложите, как починить, или сделайте настройку. Сносы находит `tools/check/only-better.cjs` (в PR — пометка
+мейнтейнеру, правка с сайта отклоняется сама). Подробнее — [AGENTS.md](AGENTS.md).
+
+## Пять способов
 
 1. **Идея и голос.** [Обсуждения → Идеи](https://github.com/kremenevskiy/ariflame-city/discussions/categories/ideas):
    новая идея — отдельной темой, за чужие — голос ⬆. Самые нужные делаем первыми; что взяли в работу — метка «в работе»,
@@ -13,10 +20,21 @@
    `client/places/minsk.json` ([описание формата](client/places/README.md)). Не хотите возиться с JSON — заполните
    форму [«Добавить место»](https://github.com/kremenevskiy/ariflame-city/issues/new?template=place.yml), мы соберём.
    Логотипы и названия заведений — только с согласия владельцев.
-3. **Со своим ИИ** — ниже: ChatGPT, Claude, Codex, Copilot или Cursor читают репозиторий и собирают pull request.
-4. **Руками** — окружение, стиль и проверки ниже.
+3. **Со своим ИИ без GitHub** — [city.ariflame.com/contribute.html](https://city.ariflame.com/contribute.html):
+   скопируйте навык в свой ChatGPT, Claude или любой ИИ, расскажите идею (можно голосом), ИИ изучит код и отдаст архив
+   с правкой — отправьте его на этой странице. Робот наложит правку на свежий `main`, проверит и откроет pull request;
+   по ссылке на правку видно, что с ней.
+4. **Со своим ИИ через GitHub** — ниже: Claude Code, Codex, Copilot или Cursor на вашем форке собирают pull request.
+5. **Руками** — окружение, стиль и проверки ниже.
 
 ## Со своим ИИ
+
+Без GitHub — страница [«Сделай город лучше»](https://city.ariflame.com/contribute.html): навык для ИИ
+([/dev/skill.md](https://city.ariflame.com/dev/skill.md); для Claude — архив навыка там же), весь код ссылками
+([/dev/llms.txt](https://city.ariflame.com/dev/llms.txt)) и одним архивом
+([/dev/flame-city-src.zip](https://city.ariflame.com/dev/flame-city-src.zip)). Свой GPT может отправлять правку сам —
+действие по [/dev/openapi.json](https://city.ariflame.com/dev/openapi.json). Принимаются текстовые файлы в `client/` и
+`docs/` (кроме `client/vendor/`, `client/minsk/`, `client/config.js`); удаление файлов и сносы — нет.
 
 В корне — [AGENTS.md](AGENTS.md): как запустить, где что лежит, правила кода и содержания, как оформить PR. Его читают
 Codex, Claude Code, Copilot, Cursor, Jules и другие агенты.

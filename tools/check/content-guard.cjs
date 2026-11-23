@@ -25,7 +25,7 @@ const HOSTS_OK = ["localhost", "127.0.0.1", "t.me", "telegram.org", "raw.githubu
 const MAX_LINES = 1500, MAX_BIN = 2 * 1024 * 1024;
 const ASSET_EXT = /\.(png|jpe?g|webp|gif|glb|gltf|bin|ogg|mp3|wav|m4a|ttf|otf|woff2?)$/i;
 const BIN_EXT = /\.(png|jpe?g|webp|gif|glb|bin|ogg|mp3|wav|m4a|ttf|otf|woff2?|zip|mp4|webm)$/i;
-const SELF = ["tools/check/content-guard.cjs", "tools/check/words.cjs"];
+const SELF = ["tools/check/content-guard.cjs", "tools/check/words.cjs", "tools/check/only-better.cjs"];
 const GENERATED = [/^client\/minsk\/s_[-\d]+_[-\d]+\.json$/, /^client\/minsk\/(map|addr)\.json$/, /^client\/vendor\//, /^client\/tracks\.json$/];
 
 function git(args) { return execFileSync("git", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 }); }
@@ -93,6 +93,8 @@ changed.forEach(({ file }) => {
 const assets = changed.filter((c) => c.st === "A" && ASSET_EXT.test(c.file) && !isGen(c.file));
 if (assets.length && !changed.some((c) => c.file === "ASSETS.md")) assets.forEach((a) => add(review, a.file, 0, "новый ассет без строки в ASSETS.md (источник и лицензия)"));
 
+// правило «только лучше» (only-better.cjs): сносы кода и механик — мейнтейнер смотрит глазами (правка с сайта такие не пропускает)
+if (!ALL) try { require("./only-better.cjs").check(BASE).forEach((x) => add(review, x.file, x.line, x.why)); } catch (e) { /* нет файла рядом — старая база */ }
 const fmt = (x) => "- `" + x.file + (x.line ? ":" + x.line : "") + "` — " + x.why;
 const out = ["## Сторож содержания", "",
   block.length ? "**Нужно исправить (" + block.length + "):**" : "Блокирующих находок нет.", ...block.slice(0, 60).map(fmt), "",

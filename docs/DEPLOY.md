@@ -173,6 +173,21 @@ BASE=https://game.example.org/ npm run check                                # о
 `t.me/<бот>?startapp=fc_<город>_<x>_<z>` (переход в точку). Сторис из фоторежима требуют публичный HTTPS-адрес кадра
 (`FC_PUBLIC`).
 
+## Правки с сайта (без GitHub)
+
+Страница `contribute.html` шлёт правку в `POST /g/contrib` (server/contrib.py) — очередь лежит в `contrib/` рядом с
+базой (`FC_CONTRIB` — своя папка). Забирает её workflow «Правки с сайта» (`contrib-intake.yml`, раз в 15 минут) по ключу:
+
+```bash
+KEY=$(openssl rand -hex 24)
+echo "FC_CONTRIB_KEY=$KEY" >> /etc/fcg.env && systemctl restart fcg     # сервер: ключ очереди
+gh secret set CONTRIB_KEY --body "$KEY"                                   # репозиторий: тот же ключ
+gh variable set CONTRIB_API --body "https://city.example.org/g"           # если сервер не city.ariflame.com
+```
+
+Без ключа правки копятся в очереди, а наружу она не отдаётся (`/g/contrib/pending` → 404). Отклонённая правка получает
+причину — автор видит её на странице своей правки.
+
 ## Автовыкатка (сайт сам забирает проверенный выпуск)
 
 После слияния в `main` и зелёных проверок workflow «Выпуск» кладёт собранную статику в GitHub-выпуск `live`

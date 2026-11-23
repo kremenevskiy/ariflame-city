@@ -171,7 +171,7 @@ footer a{color:var(--warm)}
     <h2>Как добавить своё</h2>
     <div class="steps">
       <div class="step"><b>Предложи</b><p>Напиши, что добавить: место в Минске, машину, задание, механику. Голосуй за чужие идеи.</p><a class="btn hot" id="l-idea" href="#">Предложить идею</a></div>
-      <div class="step"><b>Сделай со своим ИИ</b><p>Дай ChatGPT или Claude ссылку на репозиторий и идею — в AGENTS.md всё, чтобы он собрал pull request.</p><a class="btn" id="l-ai" href="#">Как это сделать</a></div>
+      <div class="step"><b>Сделай со своим ИИ</b><p>Даже без GitHub: скопируй навык в ChatGPT или Claude, расскажи идею, отправь файл от ИИ — робот откроет pull request.</p><a class="btn" id="l-ai" href="contribute.html">Сделать правку</a></div>
       <div class="step"><b>Увидь в игре</b><p>Мы проверяем, вливаем — и изменение само уезжает на сайт. Твоё имя — в ленте и среди строителей.</p><a class="btn" href="./?city=minsk">Открыть город</a></div>
     </div>
   </section>
@@ -188,7 +188,7 @@ footer a{color:var(--warm)}
   var GH = "https://github.com/" + REPO;
   var REMOTE = "https://raw.githubusercontent.com/" + REPO + "/status-data/status.json";
   var $ = function (id) { return document.getElementById(id); };
-  $("l-repo").href = GH; $("l-idea").href = GH + "/discussions/new?category=ideas"; $("l-ai").href = GH + "/blob/main/CONTRIBUTING.md#со-своим-ии";
+  $("l-repo").href = GH; $("l-idea").href = GH + "/discussions/new?category=ideas"; 
 
   function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[c]; }); }
   function ago(iso) {

@@ -7,18 +7,24 @@ on:
   push:
     branches: [main]
   pull_request:
+  # правки с сайта (contrib-intake.yml): PR открывает бот, а PR от GITHUB_TOKEN сам CI не запускает — запуск вручную
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Номер PR (правка с сайта)"
+        required: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.sha }}
+  group: ci-${{ github.event.pull_request.number || inputs.pr || github.sha }}
   cancel-in-progress: true
 
 jobs:
   guard:
     name: Сторож содержания
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -28,19 +34,19 @@ jobs:
           persist-credentials: false
       - name: Сторож из базовой ветки (PR не может ослабить его под себя)
         env:
-          BASE_REF: ${{ github.base_ref }}
+          BASE_REF: ${{ github.base_ref || 'main' }}
         run: |
           git fetch -q origin "$BASE_REF"
           mkdir -p "$RUNNER_TEMP/guard" report
-          for f in content-guard.cjs words.cjs; do
+          for f in content-guard.cjs words.cjs only-better.cjs; do
             git show "origin/$BASE_REF:tools/check/$f" > "$RUNNER_TEMP/guard/$f" 2>/dev/null || cp "tools/check/$f" "$RUNNER_TEMP/guard/$f"
           done
           GUARD_JSON=report/guard.json node "$RUNNER_TEMP/guard/content-guard.cjs" "origin/$BASE_REF"
       - name: Номер PR и коммит — для отчёта (pr-report.yml сверяет их сам)
         if: always()
         env:
-          PR: ${{ github.event.pull_request.number }}
-          SHA: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number || inputs.pr || 'null' }}
+          SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           mkdir -p report && echo "{\"pr\": $PR, \"sha\": \"$SHA\"}" > report/pr.json
       - uses: actions/upload-artifact@v4

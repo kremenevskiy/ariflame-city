@@ -1,0 +1,54 @@
+# Правки с сайта → pull request. Человек без GitHub делает правку со своим ИИ и отправляет её на
+# city.ariflame.com/contribute.html; сервер кладёт её в очередь (server/contrib.py). Раз в 15 минут этот workflow
+# забирает новые правки (секрет CONTRIB_KEY = FC_CONTRIB_KEY сервера), накладывает на свежий main, проверяет правило
+# «только лучше» и сторож содержания (код проверок — из main, правка его не трогает), открывает PR от имени бота и
+# запускает CI на ветке. Отклонённая правка получает причину — человек видит её на странице своей правки.
+# Без секрета CONTRIB_KEY ничего не делает. Адрес сервера — переменная CONTRIB_API (по умолчанию city.ariflame.com/g).
+name: Правки с сайта
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write        # ветка contrib/<id>
+  pull-requests: write   # открыть PR
+  actions: write         # запустить CI на ветке (PR от GITHUB_TOKEN сам CI не запускает)
+  issues: write          # метка «с сайта»
+
+concurrency:
+  group: contrib-intake
+  cancel-in-progress: false
+
+jobs:
+  intake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Приём включён?
+        id: on
+        env:
+          KEY: ${{ secrets.CONTRIB_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then echo "on=1" >> "$GITHUB_OUTPUT"; else echo "секрета CONTRIB_KEY нет — приём правок с сайта выключен"; fi
+      - uses: actions/checkout@v4
+        if: steps.on.outputs.on == '1'
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        if: steps.on.outputs.on == '1'
+        with:
+          node-version: 22
+      - name: Забрать правки и открыть PR
+        if: steps.on.outputs.on == '1'
+        env:
+          CONTRIB_KEY: ${{ secrets.CONTRIB_KEY }}
+          CONTRIB_API: ${{ vars.CONTRIB_API || 'https://city.ariflame.com/g' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          gh label create "с сайта" --color F28C28 --description "Правка пришла с сайта без GitHub (contribute.html)" 2>/dev/null || true
+          node tools/contrib/intake.cjs

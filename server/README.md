@@ -119,6 +119,14 @@ cd server && uvicorn app:app --host 127.0.0.1 --port 8091 --ws websockets
 | `GET\|HEAD /g/p/<id>.jpg` | кадр 48 ч, `Access-Control-Allow-Origin: *`, `noindex` |
 | `GET /g/events` | календарь недели из сида (одинаков у всех): тема, бонусы, скидка, гонка, события по дням |
 
+Правки без GitHub (contrib.py; страница `contribute.html`, PR открывает `.github/workflows/contrib-intake.yml`):
+
+| ручка | что |
+|---|---|
+| `POST /g/contrib` | `{title, idea, author?, contact?, tool?, agree: true}` и правка — `patch` (git diff), `files` [{path, content}] или `zip` (base64). Только текстовые файлы в `client/` и `docs/`, без удаления файлов. 200 `{id, status, files}` / 400 что не так / 413 / 429 / 507 |
+| `GET /g/contrib/<id>` | статус: `pending` → `taken` → `pr` (`pr_url`) или `rejected` (`reason`); без автора и контакта |
+| `GET /g/contrib/pending`, `POST /g/contrib/<id>/result` | только с заголовком `X-Contrib-Key` = `FC_CONTRIB_KEY` (нет ключа — 404) |
+
 Перед сервером нужен прокси, который пропускает тело `/g/photo` до 2 МБ (общий потолок остальных `/g/*` — 128 КБ
 достаточно) — [docs/DEPLOY.md](../docs/DEPLOY.md).
 

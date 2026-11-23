@@ -649,16 +649,28 @@
   }
 
   /* ---- кнопки HUD для тача: телефон, карта, пауза ---------------------------------------------------------------- */
-  var corner = el("div", "ui corner", "<button type='button' data-a='phone'>📱</button><button type='button' data-a='map'>🗺️</button><button type='button' data-a='pause'>⏸</button>" +
-    (FC.input.canFullscreen ? "<button type='button' data-a='full' title='Во весь экран'>⛶</button>" : ""));
+  // иконки — одного набора с кнопками действий (FC.icons, finput.js); на телефоне — ещё «повернуть экран»
+  var ic = FC.icons || function () { return ""; };
+  var corner = el("div", "ui corner", "<button type='button' data-a='phone' aria-label='Телефон'>" + ic("phone") + "</button>" +
+    "<button type='button' data-a='map' aria-label='Карта'>" + ic("map") + "</button><button type='button' data-a='pause' aria-label='Пауза'>" + ic("pause") + "</button>" +
+    (FC.input.canFullscreen ? "<button type='button' data-a='full' aria-label='Во весь экран'>" + ic("full") + "</button>" : "") +
+    "<button type='button' data-a='rotate' class='only-touch' aria-label='Повернуть экран'>" + ic("rotate") + "</button>");
   hud.appendChild(corner);
   corner.querySelectorAll("button").forEach(function (b) {
     b.addEventListener("click", function (e) {
       e.stopPropagation();
       if (b.dataset.a === "phone") openPhone(); else if (b.dataset.a === "map") openMap();
-      else if (b.dataset.a === "full") FC.input.fullscreen(); else togglePause(true);
+      else if (b.dataset.a === "full") FC.input.fullscreen();
+      else if (b.dataset.a === "rotate") { if (FC.input.landscape() === "rotate") rotateHint(); }
+      else togglePause(true);
     });
   });
+  // подсказка повернуть телефон (iPhone в Safari и Telegram — замка ориентации нет или он держит текущий поворот)
+  function rotateHint() {
+    var land = global.innerWidth > global.innerHeight;
+    toast((land ? "Поверни телефон вертикально" : "Поверни телефон горизонтально") + " — интерфейс подстроится", "", 3);
+  }
+  FC.on("input:rotate-hint", rotateHint);
 
   /* ---- кадр ----------------------------------------------------------------------------------------------------- */
   FC.addSystem({

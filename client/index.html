@@ -26,7 +26,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="brand/icon-192.png">
 <link rel="apple-touch-icon" href="brand/apple-touch-icon.png">
 <style>
-:root{--ink:#f6efe2;--gold:#ffcf7a;--glass:rgba(12,16,32,.74);--line:rgba(255,207,122,.3);--ok:#7dffb0;--bad:#ff6b7a;--safe-t:max(env(safe-area-inset-top),calc(var(--tg-safe-area-inset-top,0px) + var(--tg-content-safe-area-inset-top,0px)));--safe-b:max(env(safe-area-inset-bottom),var(--tg-safe-area-inset-bottom,0px))}
+:root{--ink:#f6efe2;--gold:#ffcf7a;--glass:rgba(12,16,32,.74);--line:rgba(255,207,122,.3);--ok:#7dffb0;--bad:#ff6b7a;--safe-t:max(env(safe-area-inset-top),calc(var(--tg-safe-area-inset-top,0px) + var(--tg-content-safe-area-inset-top,0px)));--safe-b:max(env(safe-area-inset-bottom),var(--tg-safe-area-inset-bottom,0px));--safe-l:max(env(safe-area-inset-left),var(--tg-safe-area-inset-left,0px));--safe-r:max(env(safe-area-inset-right),var(--tg-safe-area-inset-right,0px))}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;position:fixed;inset:0;width:100%;background:#0b1024;color:var(--ink);font:14px/1.35 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-tap-highlight-color:transparent;overscroll-behavior:none;-webkit-user-select:none;user-select:none;touch-action:none}
 #cv{position:fixed;inset:0;width:100%;height:100%;display:block;outline:none}
@@ -139,23 +139,43 @@ body.warp #cv{filter:brightness(1.8) blur(3px);transition:filter .25s}
 .sec{margin-top:8px;border:1px solid var(--line);background:transparent;color:var(--ink)}
 /* угловые кнопки */
 .corner{position:fixed;right:14px;bottom:calc(14px + var(--safe-b));display:flex;gap:8px}
-.corner button{width:44px;height:44px;border-radius:14px;border:1px solid var(--line);background:var(--glass);font-size:20px;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.corner button{width:44px;height:44px;border-radius:14px;border:1px solid var(--line);background:var(--glass);font-size:20px;cursor:pointer;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:#fff;display:grid;place-items:center;padding:0}
+.corner button svg{width:22px;height:22px}.corner button:active{background:rgba(255,179,71,.9);color:#1a0d05}
+.only-touch{display:none!important}body.touch .only-touch{display:grid!important}
 /* телефон: кнопки телефона/карты/паузы/экрана — строкой справа под деньгами (слева сверху — миникарта, снизу — джойстик) */
-body.touch .corner{top:calc(80px + var(--safe-t));bottom:auto;right:10px;left:auto;flex-direction:row;gap:6px}
-body.touch .corner button{width:40px;height:40px;font-size:18px;border-radius:12px}
-body.touch .timer{top:calc(132px + var(--safe-t))}body.touch .notes{top:calc(172px + var(--safe-t))}
+/* Телефон (23.11: «онлайн наезжает, кнопки — профессиональнее, и горизонтально»): справа сверху — деньги, время, онлайн;
+   под ними столбцом — меню (телефон, карта, пауза, фото, экран, поворот); плашки и сообщения — левее столбца, ниже
+   миникарты; действия — дугой под правым большим пальцем, главная крупнее; горизонтально — своя раскладка ниже */
+body.touch .corner{top:calc(102px + var(--safe-t));bottom:auto;right:calc(10px + var(--safe-r));left:auto;flex-direction:column;gap:8px}
+body.touch .corner button{width:42px;height:42px;border-radius:13px;background:rgba(10,14,30,.52);border:1px solid rgba(255,255,255,.16);box-shadow:0 4px 14px rgba(0,0,0,.25)}
+body.touch .corner button svg{width:21px;height:21px}
+body.touch .topr{right:calc(12px + var(--safe-r))}
+body.touch .mp-online{top:calc(70px + var(--safe-t))!important;right:calc(10px + var(--safe-r))!important}
+body.touch .toasts{top:calc(214px + var(--safe-t));max-width:calc(100vw - 132px)}
+body.touch .toast{max-width:calc(100vw - 132px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.touch .notes .note:not(:first-child){display:none}   /* на телефоне — одно, последнее сообщение */
+@media (orientation:portrait) and (max-height:700px){body.touch .corner{gap:6px}body.touch .corner button{width:36px;height:36px;border-radius:11px}body.touch .corner button svg{width:18px;height:18px}}
+body.touch .timer{top:calc(132px + var(--safe-t))}body.touch .notes{top:calc(258px + var(--safe-t));right:calc(62px + var(--safe-r));width:auto;left:calc(10px + var(--safe-l));max-width:340px;margin-left:auto}
 /* тач-управление */
 #pad{position:fixed;inset:0;pointer-events:none;z-index:4}
 .stick{position:fixed;width:120px;height:120px;border-radius:50%;border:2px solid rgba(255,255,255,.25);background:rgba(255,255,255,.06);opacity:0;transition:opacity .15s;pointer-events:none}
 .stick .knob{transition:none;will-change:transform}
 .stick.on{opacity:1}
 .knob{position:absolute;left:35px;top:35px;width:50px;height:50px;border-radius:50%;background:rgba(255,207,122,.65)}
-.tbtn{position:fixed;pointer-events:auto;width:58px;height:58px;border-radius:50%;border:1px solid rgba(255,255,255,.25);background:rgba(12,16,32,.55);font-size:24px;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);touch-action:none}
-.tbtn.on,.tbtn.hot{background:rgba(255,207,122,.75);border-color:#fff}
-.b-use{right:20px;bottom:calc(160px + var(--safe-b))}.b-car{right:92px;bottom:calc(196px + var(--safe-b))}
-.b-jump{right:20px;bottom:calc(88px + var(--safe-b))}.b-punch{right:92px;bottom:calc(122px + var(--safe-b))}
-.b-run{right:164px;bottom:calc(88px + var(--safe-b))}.b-horn{right:164px;bottom:calc(160px + var(--safe-b))}
-.b-roll{right:20px;bottom:calc(232px + var(--safe-b))}
+.tbtn{position:fixed;pointer-events:auto;width:56px;height:56px;border-radius:50%;border:1.5px solid rgba(255,255,255,.22);background:radial-gradient(circle at 50% 35%,rgba(40,48,78,.62),rgba(10,14,30,.62));color:#fff;display:grid;place-items:center;padding:0;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);touch-action:none;box-shadow:0 6px 18px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.12);transition:transform .08s,background .12s}
+.tbtn svg{width:26px;height:26px;filter:drop-shadow(0 1px 1px rgba(0,0,0,.4))}
+.tbtn.on{background:linear-gradient(180deg,#ffc25c,#ff7a2f);border-color:rgba(255,255,255,.9);color:#1a0d05;transform:scale(.94)}
+.tbtn.hot{border-color:#ffb347;box-shadow:0 0 0 3px rgba(255,179,71,.35),0 6px 18px rgba(0,0,0,.3);animation:tbhot 1.6s ease-in-out infinite}
+@keyframes tbhot{50%{box-shadow:0 0 0 7px rgba(255,179,71,.12),0 6px 18px rgba(0,0,0,.3)}}
+.b-punch{width:70px;height:70px;right:calc(18px + var(--safe-r));bottom:calc(30px + var(--safe-b))}.b-punch svg{width:32px;height:32px}
+.b-jump{right:calc(102px + var(--safe-r));bottom:calc(22px + var(--safe-b))}
+.b-use{right:calc(22px + var(--safe-r));bottom:calc(114px + var(--safe-b))}
+.b-car{right:calc(96px + var(--safe-r));bottom:calc(98px + var(--safe-b))}
+.b-run,.b-roll,.b-horn{width:48px;height:48px}.b-run svg,.b-roll svg,.b-horn svg{width:22px;height:22px}
+.b-run{right:calc(176px + var(--safe-r));bottom:calc(26px + var(--safe-b))}
+.b-roll{right:calc(26px + var(--safe-r));bottom:calc(186px + var(--safe-b))}
+.b-horn{right:calc(166px + var(--safe-r));bottom:calc(96px + var(--safe-b))}
+@media (prefers-reduced-motion:reduce){.tbtn.hot{animation:none}}
 /* телефон (слово владельца 22.11: «карту снизу убери, там джойстик»): миникарта — в левый верхний угол, меньше;
    в левом нижнем — база джойстика (видна в покое, при касании прыгает под палец) */
 body.touch .miniwrap{width:104px;left:10px;top:calc(10px + var(--safe-t));bottom:auto}body.touch .minimap{width:104px;height:104px}
@@ -164,6 +184,29 @@ body.touch .help{left:50%;right:auto;top:calc(172px + var(--safe-t));transform:t
 .stick.rest .knob{opacity:.8}
 body.touch .objective{bottom:calc(250px + var(--safe-b));font-size:14px}
 body.touch .prompt{bottom:calc(272px + var(--safe-b))}
+@media (orientation:landscape) and (max-height:540px){
+  body.touch .miniwrap{width:86px;left:calc(10px + var(--safe-l));top:calc(8px + var(--safe-t))}body.touch .minimap{width:86px;height:86px}
+  body.touch .corner{flex-direction:row;top:calc(8px + var(--safe-t));right:calc(150px + var(--safe-r))}
+  body.touch .corner button{width:38px;height:38px;border-radius:12px}body.touch .corner button svg{width:19px;height:19px}
+  body.touch .mp-online{top:calc(46px + var(--safe-t))!important}
+  body.touch .toasts{top:calc(56px + var(--safe-t));left:calc(112px + var(--safe-l));transform:none;align-items:flex-start;max-width:40vw}
+  body.touch .toast{max-width:40vw}
+  body.touch .notes{top:calc(70px + var(--safe-t));left:auto;right:calc(10px + var(--safe-r));width:min(300px,38vw)}
+  body.touch .notes .note:not(:first-child){display:none}
+  body.touch .help{top:calc(56px + var(--safe-t))}
+  body.touch .objective{bottom:calc(14px + var(--safe-b));max-width:42vw;font-size:13px}
+  body.touch .prompt{bottom:calc(52px + var(--safe-b))}
+  .stick.rest{left:calc(26px + var(--safe-l));bottom:calc(18px + var(--safe-b))}
+  .tbtn{width:50px;height:50px}.tbtn svg{width:23px;height:23px}
+  .b-punch{width:62px;height:62px;right:calc(18px + var(--safe-r));bottom:calc(18px + var(--safe-b))}
+  .b-jump{right:calc(92px + var(--safe-r));bottom:calc(14px + var(--safe-b))}
+  .b-use{right:calc(20px + var(--safe-r));bottom:calc(92px + var(--safe-b))}
+  .b-car{right:calc(86px + var(--safe-r));bottom:calc(80px + var(--safe-b))}
+  .b-run,.b-roll,.b-horn{width:44px;height:44px}
+  .b-run{right:calc(156px + var(--safe-r));bottom:calc(16px + var(--safe-b))}
+  .b-roll{right:calc(22px + var(--safe-r));bottom:calc(156px + var(--safe-b))}
+  .b-horn{right:calc(146px + var(--safe-r));bottom:calc(78px + var(--safe-b))}
+}
 /* эффекты экрана */
 body.hurt #cv{filter:saturate(1.4) brightness(1.1) sepia(.4) hue-rotate(-30deg)}
 body.wasted #cv{filter:grayscale(1) contrast(1.1) brightness(.8);transition:filter 1s}

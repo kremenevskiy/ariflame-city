@@ -85,6 +85,11 @@
   /* ---- камера ------------------------------------------------------------------------------------------------ */
   // на узком (вертикальном) экране камера дальше — иначе герой занимает полэкрана
   var narrow = global.innerWidth < global.innerHeight;
+  // повернули телефон — камера подстраивается: вертикально дальше и шире обзор, горизонтально — ближе (23.11)
+  global.addEventListener("resize", function () {
+    var n = global.innerWidth < global.innerHeight; if (n === narrow) return;
+    narrow = n; cam.want = FC.clamp(cam.want + (n ? 2.5 : -2.5), 3.5, 16);
+  });
   var cam = { yaw: Math.PI, pitch: 0.32, dist: narrow ? 9.5 : 7, want: narrow ? 9.5 : 7, shakeA: 0, fov: 62, snap: true, idle: 0 };
   cam.shake = function (a) { cam.shakeA = Math.min(1.2, cam.shakeA + a); };
   FC.cam = cam;

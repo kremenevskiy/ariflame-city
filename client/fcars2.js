@@ -35,7 +35,8 @@
     ".fc-speedo small{font:700 11px system-ui;letter-spacing:.06em;color:#ffcf7a;margin-left:4px}",
     ".fc-speedo i{display:block;font:600 12px system-ui;color:rgba(255,255,255,.75);margin-top:3px;font-style:normal}",
     "body.fc-incar .fc-speedo{display:block}",
-    "body.touch .fc-speedo{left:170px;font-size:24px}"
+    "body.touch .fc-speedo{left:calc(22px + env(safe-area-inset-left));bottom:calc(152px + env(safe-area-inset-bottom));font-size:24px}",   // над джойстиком — не под дугой кнопок
+    "@media (orientation:landscape) and (max-height:540px){body.touch .fc-speedo{left:calc(160px + env(safe-area-inset-left));bottom:calc(16px + env(safe-area-inset-bottom))}}"
   ].join(""));
   var bar = document.createElement("div"); bar.className = "fc-nitro"; bar.innerHTML = "<b>🔥</b><i></i>";
   var live = document.createElement("div"); live.className = "fc-live";

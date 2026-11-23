@@ -611,9 +611,10 @@
   FC.on("weapon:hit", function (e) { if (e && e.ko && e.head && e.id === "sniper") moment("⏪ Повтор выстрела"); });
   var corner = document.querySelector(".corner");
   if (corner) {
-    var cb = document.createElement("button"); cb.type = "button"; cb.textContent = "📸"; cb.title = "Фоторежим (O), повтор (K)";
+    var cb = document.createElement("button"); cb.type = "button"; cb.innerHTML = FC.icons ? FC.icons("camera") : "📸"; cb.title = "Фоторежим (O), повтор (K)";
+    cb.setAttribute("aria-label", "Фоторежим"); cb.dataset.a = "photo";
     cb.addEventListener("click", function (e) { e.stopPropagation(); openPhoto(); });
-    corner.insertBefore(cb, corner.lastChild && corner.lastChild.dataset && corner.lastChild.dataset.a === "full" ? corner.lastChild : null);
+    corner.insertBefore(cb, corner.querySelector("[data-a='full']") || corner.querySelector("[data-a='rotate']"));
   }
   FC.hud.addApp({ id: "camera", icon: "📸", name: "Камера", color: "#7048e8", order: 6, render: function (b, api) {
     var h = "<div class='list'><button type='button' data-c='photo'>📸 Фоторежим</button><button type='button' data-c='replay'>⏪ Повтор последних 8 с</button>" +

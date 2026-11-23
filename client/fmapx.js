@@ -640,15 +640,13 @@
         c.stroke();
       });
     });
-    c.font = "700 " + Math.max(9, Math.round(260 * S)) + "px system-ui"; c.textAlign = "center"; c.fillStyle = "rgba(255,255,255,.22)";
-    PLACES.forEach(function (d) { if (d.rank >= 2) c.fillText(d.name.toUpperCase(), X(d.x), Z(d.z)); });
   }
   /* Подробный слой рядом с игроком (миникарта и крупная карта): дома загруженных кусков, улицы по ширине. */
   var det = { cv: null, x: 1e9, z: 1e9, n: -1, t: 0 }, DET = 700, DK = 1.2;
   function detail(c, k, mode, view) {
     var P = FC.player; if (!P || !FC.osm) return;
     var cx = mode === "big" && view ? view.x : P.x, cz = mode === "big" && view ? view.z : P.z;
-    if (mode === "big" && k < 0.25) { drawLabels(c, k, view); return; }
+    if (mode === "big" && k < 0.25) return;                        // подписи рисует карта последними (mapLabels)
     var nl = FC.osm.chunksLoaded();
     if (!det.cv) { det.cv = document.createElement("canvas"); det.cv.width = det.cv.height = Math.round(DET * DK); }
     if (Math.hypot(cx - det.x, cz - det.z) > DET * 0.28 || (nl !== det.n && performance.now() - det.t > 1500)) {
@@ -668,14 +666,21 @@
       });
     }
     c.drawImage(det.cv, det.x - DET / 2, det.z - DET / 2, DET, DET);
-    if (mode === "big") drawLabels(c, k, view);
   }
+  // названия станций метро (с 0,1 пикс/м) и ориентиров (с 0,35 — короткие, с 0,7 — все); наложения отсекает карта (fhud)
   function drawLabels(c, k, view) {
-    var vw = 900 / k, fs = Math.max(10, 13 / k);
+    var vw = 900 / k, fs = Math.max(10, 12 / k);
     c.textAlign = "center"; c.textBaseline = "middle";
-    c.font = "600 " + fs + "px system-ui"; c.fillStyle = "rgba(255,255,255,.85)";
-    if (k > 0.05) D.metro.forEach(function (m) { if (Math.abs(m[1] - view.x) < vw && Math.abs(m[2] - view.z) < vw) c.fillText("Ⓜ " + m[0], m[1], m[2]); });
-    if (k > 0.12) { c.fillStyle = "rgba(255,230,180,.8)"; D.marks.forEach(function (m) { if (Math.abs(m[1] - view.x) < vw && Math.abs(m[2] - view.z) < vw) c.fillText(m[0], m[1], m[2] + fs * 1.2); }); }
+    c.font = "600 " + fs + "px system-ui";
+    var near = function (m) { return Math.abs(m[1] - view.x) < vw && Math.abs(m[2] - view.z) < vw; };
+    if (k > 0.1) {
+      c.lineWidth = 3 / k; c.strokeStyle = "rgba(8,12,24,.75)"; c.fillStyle = "rgba(255,255,255,.9)";
+      D.metro.forEach(function (m) { if (near(m)) { c.strokeText("Ⓜ " + m[0], m[1], m[2]); c.fillText("Ⓜ " + m[0], m[1], m[2]); } });
+    }
+    if (k > 0.35) {
+      c.font = "500 " + Math.max(9, 11 / k) + "px system-ui"; c.fillStyle = "rgba(255,230,180,.85)";
+      D.marks.forEach(function (m) { if (near(m) && (k > 0.7 || m[0].length <= 26)) { c.strokeText(m[0], m[1], m[2] + fs * 1.2); c.fillText(m[0], m[1], m[2] + fs * 1.2); } });
+    }
   }
 
   /* ---- «Найди свой дом»: поиск по адресу (улица по-русски или по-белорусски + номер) → к подъезду. Индекс адресов —
@@ -790,7 +795,7 @@
   FC.map = {
     minsk: true, title: "Карта Минска", attribution: D.attribution, EDGE: 20000, HALF: 1e6, LANE: LANE, WALK: WALK,
     SEA_Z: 1e7, SEA_LINE: 1e7, BEACH_Z0: 1e7 - 10, RIVER: RIVER, RIVER_W: RIVER_W, LAKE: { x: 1e7, z: 1e7, r: 0 },
-    mapBounds: [BX0, BZ0, BX1, BZ1], mapScale: 0.1, paintBase: paintBase, mapDetail: detail,
+    mapBounds: [BX0, BZ0, BX1, BZ1], mapScale: 0.1, paintBase: paintBase, mapDetail: detail, mapLabels: drawLabels,
     XS: [], ZS: [], VROADS: [], HROADS: [], nodes: NODES, edges: EDGES, blocks: BLOCKS, buildings: BUILDINGS,
     districts: DISTRICTS, places: PLACES, DIST: DIST, zones: ZONE_B, pois: POIS, homes: HOMES, hq: HQ, plaza: plaza, props: PROPS,
     start: { x: SX, z: SZ }, airfield: D.airfield, metro: D.metro, marks: D.marks, quiet: quiet, gov: gov,

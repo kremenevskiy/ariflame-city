@@ -351,13 +351,16 @@
 
   /* ---- карта: точки цветом хозяина ------------------------------------------------------------------------- */
   FC.hud.addMapLayer(function (c, k, mode) {
-    var r = (mode === "big" ? 8 : 5) / k;
+    var tier = mode === "big" && FC.hud.mapTier ? FC.hud.mapTier(k) : 2;
+    if (tier === 0) return;
+    var r = (mode === "big" ? (tier === 2 ? 8 : 4) : 5) / k;
     for (var i = 0; i < POINTS.length; i++) {
       var p = POINTS[i], t = TEAMS[owner(p)];
+      if (mode === "big" && c.spot && !c.spot(p.x, p.z, r)) continue;
       c.globalAlpha = mode === "big" ? 0.85 : 0.75;
       c.fillStyle = t.color; c.beginPath(); c.arc(p.x, p.z, r, 0, 7); c.fill();
       if (mine(p)) { c.strokeStyle = "#ffcf7a"; c.lineWidth = 2 / k; c.stroke(); }
-      if (mode === "big") { c.globalAlpha = 1; c.fillStyle = "#fff"; c.font = (11 / k) + "px system-ui"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(p.icon, p.x, p.z); }
+      if (mode === "big" && tier === 2) { c.globalAlpha = 1; c.fillStyle = "#fff"; c.font = (11 / k) + "px system-ui"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(p.icon, p.x, p.z); }
     }
     c.globalAlpha = 1;
   });

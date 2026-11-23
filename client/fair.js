@@ -958,7 +958,9 @@
   /* ---- карта, телефон ------------------------------------------------------------------------------------ */
   function mapLayer(c, k, mode) {
     c.save();
+    var far = mode === "big" && FC.hud.mapTier && FC.hud.mapTier(k) === 0;
     pads.forEach(function (p) {
+      if (far || (mode === "big" && c.spot && !c.spot(p.x, p.z, 9 / k))) return;
       c.fillStyle = p.heli ? "#5fd0ff" : "rgba(95,208,255,.35)";
       c.beginPath(); c.arc(p.x, p.z, (mode === "big" ? 9 : 6) / k, 0, 7); c.fill();
       if (mode === "big") { c.fillStyle = "#0b1020"; c.font = "800 " + (11 / k) + "px system-ui"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText("H", p.x, p.z); }

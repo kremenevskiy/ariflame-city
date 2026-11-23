@@ -343,7 +343,8 @@
     }
     P.list.forEach(function (p) {
       if (p.map === false) return;
-      var r = (mode === "big" ? 15 : 11) * px;
+      var far = mode === "big" && FC.hud.mapTier && FC.hud.mapTier(k) === 0;
+      var r = (mode === "big" ? (far ? 10 : 15) : 11) * px;
       c.save();
       c.fillStyle = "#120c18"; c.strokeStyle = p.color || "#ffb347"; c.lineWidth = 2.5 * px;
       c.beginPath(); c.arc(p.x, p.z, r, 0, 7); c.fill(); c.stroke();
@@ -353,7 +354,7 @@
         c.drawImage(p.img, p.x - iw / 2, p.z - ih / 2, iw, ih);
       } else { c.fillStyle = "#fff"; c.font = (r * 1.1) + "px system-ui"; c.textAlign = "center"; c.textBaseline = "middle"; c.fillText(p.icon || KIND[p.kind].icon, p.x, p.z); }
       c.restore();
-      if (mode === "big") {
+      if (mode === "big" && !far) {
         c.font = "600 " + (12 * px) + "px system-ui"; c.textAlign = "center"; c.textBaseline = "top";
         c.lineWidth = 3 * px; c.strokeStyle = "rgba(0,0,0,.75)"; c.strokeText(p.name, p.x, p.z + r + 3 * px);
         c.fillStyle = "#fff"; c.fillText(p.name, p.x, p.z + r + 3 * px);

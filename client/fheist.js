@@ -994,9 +994,10 @@
   FC.hud.addMapLayer(function (c, k, mode) {
     if (mode !== "big") return;
     c.textAlign = "center"; c.textBaseline = "middle"; c.font = Math.max(10, 15 / k) + "px system-ui";
+    if (BANK) c.fillText("🏦", BANK.x, BANK.z);
+    if (FC.hud.mapTier(k) < 2) return;                      // ювелирки и банкоматы — с приближения, издалека только банк
     JEWELS.forEach(function (J) { c.fillText("💎", J.B.x, J.B.z); });
     ATMS.forEach(function (A) { c.fillText("🏧", A.x, A.z); });
-    if (BANK) c.fillText("🏦", BANK.x, BANK.z);
   });
 
   FC.heist = {

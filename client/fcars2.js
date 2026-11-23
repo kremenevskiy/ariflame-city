@@ -199,7 +199,8 @@
     FC.build.root.add(im);
   }
   if (FC.hud && FC.hud.addMapLayer) {
-    FC.hud.addMapLayer(function (c, k) {
+    FC.hud.addMapLayer(function (c, k, mode) {
+      if (mode === "big" && FC.hud.mapTier(k) < 2) return;      // трамплины — с приближения
       c.fillStyle = "#ffc21a";
       var s = Math.max(4, 7 / k);
       ramps.forEach(function (r) {

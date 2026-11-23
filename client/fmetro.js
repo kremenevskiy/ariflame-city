@@ -510,7 +510,7 @@
         var s = STN[n], r = (XFER[n] ? 5 : 3.6) * px;
         c.fillStyle = "#fff"; c.beginPath(); c.arc(s.x, s.z, r, 0, 7); c.fill();
         c.lineWidth = 1.8 * px; c.strokeStyle = HEX[ln]; c.stroke();
-        if (mode === "big" && k > 0.22) {
+        if (mode === "big" && FC.hud.mapTier && FC.hud.mapTier(k) === 2) {
           c.font = "600 " + (11 * px) + "px system-ui"; c.textAlign = "left"; c.textBaseline = "middle";
           c.lineWidth = 3 * px; c.strokeStyle = "rgba(0,0,0,.7)"; c.strokeText(n, s.x + r + 3 * px, s.z); c.fillStyle = "#fff"; c.fillText(n, s.x + r + 3 * px, s.z);
         }

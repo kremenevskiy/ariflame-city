@@ -332,10 +332,10 @@
   }
   function mapLayer(c, k, mode) {
     var big = mode === "big";
-    if (big && P.sale) saleLayer(c, k);
+    if (big && P.sale && FC.hud.mapTier(k) === 2) saleLayer(c, k);   // дома на продажу с ценами — с приближения
     var fs = Math.max(10, 18 / k);
     c.textAlign = "center"; c.textBaseline = "middle";
-    if (big) {
+    if (big && (!FC.hud.mapTier || FC.hud.mapTier(k) > 0)) {   // чужие дома — серым, издалека не показываем
       c.fillStyle = "rgba(120,128,140,.8)";
       P.list.forEach(function (t) {
         if (mineKey(t.k)) return;

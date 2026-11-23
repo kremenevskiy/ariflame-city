@@ -149,9 +149,6 @@
       if (e.axis === "z") x.fillRect(X(a.x - hw), X(a.z), e.w * SCALE, (b.z - a.z) * SCALE);
       else x.fillRect(X(a.x), X(a.z - hw), (b.x - a.x) * SCALE, e.w * SCALE);
     });
-    // подписи районов
-    x.font = "700 " + Math.round(34 * SCALE * 2) + "px system-ui"; x.textAlign = "center"; x.fillStyle = "rgba(255,255,255,.18)";
-    M.districts.forEach(function (d) { x.fillText(d.name.toUpperCase(), X(d.x), X(d.z)); });
   }
   paint();
   if (M.paintBase) FC.on("map:base", paint);
@@ -291,11 +288,16 @@
     // районы — тап переносит туда; ниже — игроки онлайн (если сервер ответил)
     // быстрые места (Минск — узнаваемые точки; координаты — ресёрч minsk-landmarks-coords.json), потом районы
     var quick = M.minsk ? QUICK_MINSK : (M.hq ? [["🔥 Башня Флейм", M.hq.x, M.hq.z]] : []);
-    leg.innerHTML = quick.map(function (q) { return "<button type='button' class='lgo lq' data-x='" + Math.round(q[1]) + "' data-z='" + Math.round(q[2]) + "'>" + esc(q[0]) + "</button>"; }).join("") +
-      M.districts.map(function (d) { return "<button type='button' class='lgo' data-x='" + Math.round(d.x) + "' data-z='" + Math.round(d.z) + "'>⚡ " + esc(d.name) + "</button>"; }).join("") +
+    // одна строка с прокруткой: быстрые места; районы — по кнопке «Районы» (раньше 3–4 ряда кнопок закрывали полкарты)
+    leg.classList.remove("all");
+    leg.innerHTML = (M.districts.length ? "<button type='button' class='lgo lmore'>⚡ Районы ▾</button>" : "") +
+      quick.map(function (q) { return "<button type='button' class='lgo lq' data-x='" + Math.round(q[1]) + "' data-z='" + Math.round(q[2]) + "'>" + esc(q[0]) + "</button>"; }).join("") +
+      M.districts.map(function (d) { return "<button type='button' class='lgo ld' data-x='" + Math.round(d.x) + "' data-z='" + Math.round(d.z) + "'>⚡ " + esc(d.name) + "</button>"; }).join("") +
       (FC.me && FC.me.home ? "<button type='button' class='lgo' data-x='" + Math.round(FC.me.home.x) + "' data-z='" + Math.round(FC.me.home.z) + "'>🏠 Домой</button>" : "") +
       "<span class='lpl'></span>";
-    leg.querySelectorAll(".lgo").forEach(function (b) { b.addEventListener("click", function (e) { e.stopPropagation(); teleport(+b.dataset.x, +b.dataset.z, true); }); });
+    leg.querySelectorAll(".lgo[data-x]").forEach(function (b) { b.addEventListener("click", function (e) { e.stopPropagation(); teleport(+b.dataset.x, +b.dataset.z, true); }); });
+    var more = leg.querySelector(".lmore");
+    if (more) more.addEventListener("click", function (e) { e.stopPropagation(); var on = leg.classList.toggle("all"); more.textContent = on ? "⚡ Районы ▴" : "⚡ Районы ▾"; });
     if (FC.mp && FC.mp.online) FC.mp.online().then(function (list) {
       var box = leg.querySelector(".lpl"); if (!box || !list || !list.length) return;
       box.innerHTML = list.slice(0, 12).map(function (p) {
@@ -418,15 +420,68 @@
     c.save(); c.translate(w / 2, h / 2); c.scale(view.k, view.k); c.translate(-view.x, -view.z);
     c.drawImage(base, MB[0], MB[1], MB[2] - MB[0], MB[3] - MB[1]);
     if (M.mapDetail) M.mapDetail(c, view.k, "big", view);
-    mapLayers.forEach(function (fn) { try { fn(c, view.k, "big"); } catch (e) { /* слой */ } });
-    // значки точек
+    // Подписи и значки без наложений: каждая надпись слоя проверяется по уже занятым местам экрана, занято — не рисуем.
+    // Порядок — по важности: ты и метки (место держим заранее) → слои игры (задания, места, метро) → точки города →
+    // названия станций и ориентиров. Мелочь включается с приближением (k — пикселей на метр).
+    var occ = [], dprK = dpr, tr = function (x, z) { return [((x - view.x) * view.k + w / 2) * dprK, ((z - view.z) * view.k + h / 2) * dprK]; };
+    var pS = tr(FC.player.x, FC.player.z); occ.push([pS[0] - 34 * dpr, pS[1] - 30 * dpr, pS[0] + 34 * dpr, pS[1] + 40 * dpr]);
+    Object.keys(markers).forEach(function (k) { var m = markers[k], q = tr(m.x, m.z); occ.push([q[0] - 16 * dpr, q[1] - 16 * dpr, q[0] + 16 * dpr, q[1] + 16 * dpr]); });
+    var own = null, lastKey = null, lastOk = false, origFill = c.fillText, origStroke = c.strokeText;
+    function fits(t, x, y) {
+      var key = t + "|" + x + "|" + y;
+      if (key === lastKey) return lastOk;
+      var m = c.getTransform(), sx = m.a * x + m.c * y + m.e, sy = m.b * x + m.d * y + m.f, sc = Math.hypot(m.a, m.b);
+      var px = (/(\d+(?:\.\d+)?)px/.exec(c.font) || [0, 12])[1] * sc, tw = c.measureText(t).width * sc, th = px * 1.15;
+      var x0 = c.textAlign === "center" ? sx - tw / 2 : c.textAlign === "right" || c.textAlign === "end" ? sx - tw : sx;
+      var y0 = c.textBaseline === "middle" ? sy - th / 2 : c.textBaseline === "top" ? sy : sy - th * 0.85;
+      var r = [x0 - 3 * dpr, y0 - 2 * dpr, x0 + tw + 3 * dpr, y0 + th + 2 * dpr], ok = true;
+      for (var i = 0; i < occ.length && ok; i++) { var o = occ[i]; if (o !== own && r[0] < o[2] && r[2] > o[0] && r[1] < o[3] && r[3] > o[1]) ok = false; }
+      if (ok) occ.push(r);
+      lastKey = key; lastOk = ok; return ok;
+    }
+    // значок-кружок слоя (r — в метрах мира): занято — слой его пропускает
+    c.spot = function (x, z, r) {
+      var q = tr(x, z), rr = r * view.k * dpr, b = [q[0] - rr, q[1] - rr, q[0] + rr, q[1] + rr];
+      for (var i = 0; i < occ.length; i++) { var o = occ[i]; if (b[0] < o[2] && b[2] > o[0] && b[1] < o[3] && b[3] > o[1]) return false; }
+      occ.push(b); own = b; lastKey = null; return true;
+    };
+    function districtNames(t) {
+      var list = (M.places && M.places.length ? M.places : M.districts.map(function (d) { return { name: d.name, x: d.x, z: d.z, rank: 3 }; }))
+        .filter(function (d) { return (d.rank || 3) >= (t === 2 ? 1 : 2); })
+        .sort(function (a, b) { return (b.rank || 3) - (a.rank || 3); });
+      c.textAlign = "center"; c.textBaseline = "middle"; c.lineWidth = 3 / view.k; c.strokeStyle = "rgba(8,12,24,.55)";
+      var seen = {};                                             // у района бывает несколько точек («Сухарево») — одна подпись
+      list.forEach(function (d) {
+        if (seen[d.name]) return; seen[d.name] = 1;
+        var big = (d.rank || 3) >= 3, px = t === 2 ? 12 : big ? 15 : d.rank === 1 ? 11 : 13;
+        c.font = (big ? "800 " : "700 ") + (px / view.k) + "px system-ui";
+        c.fillStyle = t === 2 ? "rgba(255,255,255,.38)" : big ? "rgba(255,255,255,.82)" : "rgba(255,255,255,.62)";
+        if (t < 2) c.strokeText(d.name.toUpperCase(), d.x, d.z);  // та же надпись — место уже проверено (fits помнит)
+        c.fillText(d.name.toUpperCase(), d.x, d.z);
+      });
+    }
+    c.fillText = function (t, x, y, mw) { if (fits(t, x, y)) origFill.call(c, t, x, y, mw); };
+    c.strokeText = function (t, x, y, mw) { if (fits(t, x, y)) origStroke.call(c, t, x, y, mw); };
+    // районы на обзоре — главное, пишем раньше значков слоёв (во Флейм-Сити районов мало — и на среднем зуме)
+    var tier = H.mapTier(view.k), namesFirst = tier === 0 || (!M.minsk && tier === 1);
+    if (namesFirst) districtNames(tier);
+    mapLayers.forEach(function (fn) { own = null; try { fn(c, view.k, "big"); } catch (e) { /* слой */ } });
+    own = null;
+    if (tier === 1 && !namesFirst) districtNames(tier);
+    // значки точек: издалека — только больницы и полиция, ближе — все (без наложений)
     c.textAlign = "center"; c.textBaseline = "middle";
     var fs = Math.max(10, 16 / view.k);
     c.font = fs + "px system-ui";
-    M.pois.forEach(function (B) { c.fillText(B.emoji || "•", B.x, B.z); });
-    Object.keys(M.zones).forEach(function (k) { var B = M.zones[k]; c.fillText(B.emoji, B.x, B.z); });
+    var allPois = tier === 2;
+    if (tier > 0) {                                              // весь город — без мелких значков: районы, метро, места, ты
+      M.pois.forEach(function (B) { if (allPois || B.poi === "hospital" || B.poi === "police") c.fillText(B.emoji || "•", B.x, B.z); });
+      Object.keys(M.zones).forEach(function (k) { var B = M.zones[k]; c.fillText(B.emoji, B.x, B.z); });
+    }
     if (M.hq) c.fillText("🔥", M.hq.x, M.hq.z);
     if (FC.me && FC.me.home) c.fillText("🏠", FC.me.home.x, FC.me.home.z);
+    if (M.mapLabels) M.mapLabels(c, view.k, view);               // названия станций и ориентиров — последними
+    if (tier === 2) districtNames(tier);                         // вблизи районы — тише всех, где осталось место
+    delete c.fillText; delete c.strokeText; delete c.spot;       // дальше — снова обычные методы холста
     Object.keys(markers).forEach(function (k) { var m = markers[k]; c.fillStyle = m.color; c.beginPath(); c.arc(m.x, m.z, 9 / view.k, 0, 7); c.fill(); c.fillStyle = "#000"; c.fillText(m.icon || "", m.x, m.z); });
     c.restore();
     // игроки онлайн и ты — в экранных пикселях (не зависят от масштаба: на весь Минск точка в 8 «метров карты» терялась),
@@ -667,6 +722,9 @@
 
   H.setStars = setStars; H.help = help; H.objective = objective; H.timer = setTimer; H.toast = toast; H.big = big;
   H.notify = notify; H.dialog = dialog; H.addApp = addApp; H.openPhone = openPhone; H.closePhone = closePhone;
+  // уровень подробности большой карты: 0 — весь город, 1 — район, 2 — улицы (k — пикселей на метр; Флейм-Сити меньше —
+  // его пороги крупнее). Все слои спрашивают уровень здесь, а не свои числа: одна шкала на оба города.
+  H.mapTier = function (k) { return M.minsk ? (k < 0.05 ? 0 : k < 0.2 ? 1 : 2) : (k < 0.2 ? 0 : k < 0.5 ? 1 : 2); };
   H.openMap = openMap; H.teleport = teleport; H.addMapLayer = addMapLayer; H.pause = togglePause; H.atlasStyle = atlasStyle; H.esc = esc;
   H.inDialog = function () { return !!dq; };
   FC.hud = H;

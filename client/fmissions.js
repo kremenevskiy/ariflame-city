@@ -510,6 +510,7 @@
   }
   H.addMapLayer(function (c, k, mode) {
     if (cur) return;
+    if (mode === "big" && FC.hud.mapTier && FC.hud.mapTier(k) === 0) return;
     var s = (mode === "big" ? 15 : 9) / k;
     c.save();
     c.font = s + "px system-ui"; c.textAlign = "center"; c.textBaseline = "middle";
@@ -517,6 +518,7 @@
     LIST.forEach(function (m) {
       if (!m._plan) return;
       var a = startAt(m), md = r.best[m.id];
+      if (mode === "big" && c.spot && !c.spot(a.x, a.z, s * 0.75)) return;
       c.fillStyle = md && md.medal === "g" ? "rgba(255,210,63,.95)" : "rgba(20,24,40,.85)";
       c.beginPath(); c.arc(a.x, a.z, s * 0.75, 0, 7); c.fill();
       c.fillStyle = "#fff"; c.fillText(m.icon, a.x, a.z + s * 0.05);

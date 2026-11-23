@@ -106,6 +106,8 @@ kbd{display:inline-block;min-width:22px;padding:1px 6px;border-radius:6px;backgr
 .legend span{background:var(--glass);border-radius:10px;padding:4px 8px;font-size:12px}
 .legend .lgo{background:var(--glass);border:1px solid var(--line);border-radius:12px;padding:7px 11px;font:600 13px system-ui;color:var(--ink);cursor:pointer}
 .legend{max-height:40vh;overflow-y:auto;right:12px}.legend .lq{border-color:var(--gold);color:#fff}
+.legend:not(.all){flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;-webkit-mask:linear-gradient(90deg,#000 92%,transparent)}.legend:not(.all)::-webkit-scrollbar{display:none}
+.legend .lgo{flex:none}.legend:not(.all) .ld{display:none}.legend .lmore{background:rgba(255,207,122,.18);border-color:var(--gold)}
 .legend .lgo.pl{border-color:rgba(107,213,255,.5)}.legend .lpl{display:contents}
 .msheet{position:absolute;z-index:3;width:220px;background:rgba(14,18,36,.96);border:1px solid var(--line);border-radius:14px;padding:10px;display:flex;flex-direction:column;gap:6px;box-shadow:0 10px 30px rgba(0,0,0,.5)}
 .msheet b{font:700 14px Georgia,serif;color:#fff;padding:2px 2px 4px}

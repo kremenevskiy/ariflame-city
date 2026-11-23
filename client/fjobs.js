@@ -572,8 +572,10 @@
 
   /* ---- карта: бизнесы (свои — зелёным) -------------------------------------------------------------------- */
   function mapLayer(c, k, mode) {
+    var tier = mode === "big" && FC.hud.mapTier ? FC.hud.mapTier(k) : 2;
     bizList().forEach(function (B) {
       var o = ownedOf(B);
+      if (mode === "big" && ((!o && tier < 2) || (c.spot && !c.spot(B.x, B.z, 16 / k)))) return;
       c.strokeStyle = o ? "#7dffb0" : "#c86bff"; c.lineWidth = (mode === "big" ? 3 : 2.5) / k;
       c.beginPath(); c.arc(B.x, B.z, (mode === "big" ? 16 : 9) / k, 0, 7); c.stroke();
       if (mode === "big") {

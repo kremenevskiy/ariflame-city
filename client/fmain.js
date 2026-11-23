@@ -31,7 +31,10 @@
     veilT += dt;
     if (veilT > 0.4 && (!FC.osm || !FC.osm.busy || !FC.osm.busy() || veilT > 2.5)) { veil.classList.remove("on"); veilT = -1; }
   } });
+  // после старта и дальнего перемещения 3 с город заполняется и рядом (машины, люди) — экран в это время закрыт
+  FC.fillUntil = 0;
   P.teleport = function (x, z, heading) {
+    if (Math.hypot(x - P.x, z - P.z) > 150) FC.fillUntil = performance.now() + 3000;
     if (FC.started && FC.osm && Math.hypot(x - P.x, z - P.z) > 150) { veil.classList.add("on"); veilT = 0; }
     var c = M.collide(x, z, 0.4);
     P.x = c.x; P.z = c.z; P.vx = P.vz = 0; P.y = 0.2;

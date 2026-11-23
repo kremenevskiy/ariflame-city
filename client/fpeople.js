@@ -181,14 +181,22 @@
     s -= d; if (s < w) return [p.x1 - s, p.z1];
     s -= w; return [p.x0, p.z1 - s];
   }
-  function spawnPed(nearX, nearZ) {
-    var sp = M.sidewalkPoint(R, nearX, nearZ, 150);
+  function spawnPed(nearX, nearZ, fill) {
+    // на скорости новых ставим впереди по ходу (иначе впереди пустая улица — всех появившихся оставили позади)
+    var P = FC.player, pv = P ? Math.hypot(P.vx, P.vz) : 0, cx = nearX, cz = nearZ, rad = 150;
+    if (!fill && pv > 8) { cx = nearX + P.vx / pv * 140; cz = nearZ + P.vz / pv * 140; rad = 70; }
+    var sp = M.sidewalkPoint(R, cx, cz, rad);
     if (!sp || sp.block.kind === "water") return null;
     var d2 = FC.dist2(sp.x, sp.z, nearX, nearZ);
-    if (d2 < 35 * 35) return null;
+    if (d2 < 45 * 45 || d2 > 215 * 215) return null;
+    // на глазах не возникают: в кадре — только дальше 140 м (там маленькие и проявляются за треть секунды)
+    if (!fill && d2 < 140 * 140 && G.inView && G.inView(sp.x, 1, sp.z)) return null;
     var ch = make("ped", randomCell(R), sp.x, sp.z, { walk: R.range(1.1, 1.7) });
-    ch.block = sp.block; ch.per = perimeter(sp.block); ch.s = R.range(0, ch.per.L); ch.dir = R.chance(0.5) ? 1 : -1;
+    // место на маршруте вокруг квартала — там же, где появился (было случайное: человек «ехал» к нему десятки метров)
+    ch.block = sp.block; ch.per = perimeter(sp.block); ch.s = nearestS(ch.per, sp.x, sp.z); ch.dir = R.chance(0.5) ? 1 : -1;
     ch.lane = R.range(-0.7, 0.7);
+    var p0 = perimPoint(ch.per, ch.s), p1 = perimPoint(ch.per, ch.s + ch.dir * 0.5), dl0 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1;
+    ch.x = p0[0] - (p1[1] - p0[1]) / dl0 * ch.lane; ch.z = p0[1] + (p1[0] - p0[0]) / dl0 * ch.lane;
     if (R.chance(0.2)) ch.phone = true;
     peds.push(ch);
     if (FC.humans && FC.humans.ready && R.chance(0.12)) group(ch);
@@ -520,11 +528,12 @@
         // далеко до нормы (старт, перемещение по карте) — пачкой: улица оживает за пару секунд, а не за полминуты
         // людьми (fhumans: толпа шейдером) город держит толпу гуще, чем фигурками
         var want = Math.round(G.Q.peds * (FC.humans && FC.humans.ready ? DENS[G.Q.level] || 1 : 1)), gap = want - peds.length;
-        for (var sp = 0; sp < Math.min(8, Math.ceil(gap / 10)); sp++) spawnPed(px, pz);
+        var fillP = performance.now() < (FC.fillUntil || 0) || !FC.started;   // старт, перемещение — можно и рядом (экран закрыт)
+        for (var sp = 0; sp < Math.min(8, Math.ceil(gap / 10)); sp++) spawnPed(px, pz, fillP);
       }
       for (var i = peds.length - 1; i >= 0; i--) {
         var ch = peds[i];
-        if (ch.despawn || FC.dist2(ch.x, ch.z, px, pz) > 210 * 210) { remove(ch); peds.splice(i, 1); }
+        if (ch.despawn || FC.dist2(ch.x, ch.z, px, pz) > 235 * 235) { remove(ch); peds.splice(i, 1); }
       }
       // ход всех
       for (var k = 0; k < all.length; k++) {

@@ -954,7 +954,8 @@
     var P = FC.player;
     for (var i = 0; i < SLOTS.length; i++) {
       var s = SLOTS[i], d2 = FC.dist2(s.x, s.z, P.x, P.z);
-      if (!s.car && !s.gone && d2 < 150 * 150) {
+      // припаркованная появляется за 240 м (в кадре ближе 210 м — нет: не возникает перед носом на скорости)
+      if (!s.car && !s.gone && d2 < 240 * 240 && (d2 > 210 * 210 || !(G.inView && G.inView(s.x, 1, s.z)) || performance.now() < (FC.fillUntil || 0) || !FC.started)) {
         if (list.some(function (c) { return FC.dist2(c.x, c.z, s.x, s.z) < 25; })) continue;
         if (!s.type) {
           var rs = FC.rng(s.seed);
@@ -963,8 +964,8 @@
           var pal = TYPES[s.type].colors || PALETTE; s.color = pal[Math.floor(rs() * pal.length)];
         }
         s.car = spawn(s.type, s.x, s.z, s.h, { parked: true, color: s.color, slot: i });
-      } else if (s.car && d2 > 200 * 200 && s.car.parked && s.car.slot === i) { remove(s.car); s.car = null; }
-      if (s.gone && d2 > 260 * 260) s.gone = false;
+      } else if (s.car && d2 > 265 * 265 && s.car.parked && s.car.slot === i) { remove(s.car); s.car = null; }
+      if (s.gone && d2 > 300 * 300) s.gone = false;
     }
   }
 
@@ -977,9 +978,14 @@
   }
   var spawnT = 0;
   function trafficCount() { var n = 0; for (var i = 0; i < list.length; i++) if (list[i].ai && list[i].ai.mode === "lane") n++; return n; }
+  // Новые машины не появляются на глазах: в кадре — только дальше 240 м (там они маленькие и в дымке), рядом — только
+  // за спиной и сбоку. Исключение — «пустой город» (старт, перемещение по карте: экран закрыт загрузкой) — тогда ближе.
+  var R_IN = 85, R_OUT = 175;
   function trySpawnTraffic() {
-    var P = FC.player;
-    var a = Math.random() * Math.PI * 2, r = 95 + Math.random() * 70;
+    var P = FC.player, fill = performance.now() < (FC.fillUntil || 0) || !FC.started;
+    var rMin = fill ? 85 : 140, rMax = fill ? 175 : 270;
+    R_IN = rMin; R_OUT = rMax;
+    var a = Math.random() * Math.PI * 2, r = rMin + 10 + Math.random() * (rMax - rMin - 20);
     // чаще — впереди по движению
     var sp = Math.hypot(P.vx, P.vz);
     if (sp > 3 && Math.random() < 0.6) a = Math.atan2(P.vz, P.vx) + (Math.random() - 0.5) * 1.6;
@@ -992,9 +998,10 @@
     for (var tr = 0; tr < 6; tr++) {
       tt = 0.15 + Math.random() * 0.7; lp = M.lanePoint(e, from, lane, tt);
       d = Math.hypot(lp.x - P.x, lp.z - P.z);
-      if (d >= 85 && d <= 175) break;
+      if (d >= R_IN && d <= R_OUT) break;
     }
-    if (d < 85 || d > 175) return;
+    if (d < R_IN || d > R_OUT) return;
+    if (!fill && d < 240 && G.inView && G.inView(lp.x, 1, lp.z)) return;
     var nl = { edge: e.i, from: from, lane: lane, t: tt, x: lp.x, z: lp.z, dx: lp.dx, dz: lp.dz };
     for (var i = 0; i < list.length; i++) if (FC.dist2(list[i].x, list[i].z, nl.x, nl.z) < 14 * 14) return;
     var type = trafficType(e, M.district(nl.x, nl.z).key);
@@ -1167,7 +1174,7 @@
       var c = list[i];
       if (c.driver === "player" || c.owned || c.keep) continue;
       var d2 = FC.dist2(c.x, c.z, P.x, P.z);
-      var lim = c.parked && c.driver === "none" ? 210 : c.wrecked ? 150 : 200;
+      var lim = c.parked && c.driver === "none" ? 270 : c.wrecked ? 150 : 290;     // дальше кольца появления — не пропадают на глазах
       if (d2 > lim * lim) remove(c);
     }
     // ход

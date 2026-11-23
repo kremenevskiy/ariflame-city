@@ -934,6 +934,9 @@
     if (pr && pr.then) pr.then(done, done); else done();
     setTimeout(done, 4000);                          // не ждать вечно: на старом WebView без расширения — как раньше
   };
+  // точка в кадре камеры (с запасом по краям): машины и люди не появляются и не пропадают на глазах у игрока
+  var vView = new T.Vector3();
+  G.inView = function (x, y, z) { vView.set(x, y, z).project(camera); return vView.z < 1 && Math.abs(vView.x) < 1.15 && Math.abs(vView.y) < 1.15; };
   G.add = add; G.frame = frame; G.resize = resize; G.setQuality = setQuality; G.weather = weather;
   G.mat = { facade: facadeMaterial, road: roadMaterial, water: waterMaterial, std: std, ground: function () { return groundMaterial(false); },
     groundPlane: function () { return groundMaterial(true); }, tree: treeMaterial };

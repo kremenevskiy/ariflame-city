@@ -1044,7 +1044,8 @@
   var PARK_T = ["sedan", "sedan", "sedan", "sedan", "van", "ev", "sedan", "taxi"];
   function parkTick() {
     if (!FC.cars || !FC.cars.spawn || !FC.player) return;
-    var P = FC.player, R1 = 105, R2 = 165;
+    // во дворах: появляются до 200 м, в кадре — не ближе 170 м (на скорости не возникают перед носом), убираются за 250 м
+    var P = FC.player, R1 = 200, R2 = 250, fill = performance.now() < (FC.fillUntil || 0) || !FC.started;
     for (var i = parked.length - 1; i >= 0; i--) {
       var c = parked[i].car;
       if (c.dead || !c.parked || c.driver !== "none") { parked[i].spot.used = false; parked.splice(i, 1); continue; }
@@ -1059,7 +1060,9 @@
     cand.sort(function (a, b) { return FC.dist2(a[0], a[1], P.x, P.z) - FC.dist2(b[0], b[1], P.x, P.z); });
     for (var j = 0; j < cand.length && parked.length < PARK_MAX; j++) {
       var sp = cand[j];
-      if (FC.dist2(sp[0], sp[1], P.x, P.z) < 20 * 20) continue;            // не прямо на глазах
+      var dsp = FC.dist2(sp[0], sp[1], P.x, P.z);
+      if (dsp < 20 * 20) continue;                                          // не прямо на глазах
+      if (!fill && dsp < 170 * 170 && G.inView && G.inView(sp[0], 1, sp[1])) continue;
       if (M.buildingAt(sp[0], sp[1], 1.2) || FC.cars.list.some(function (c) { return FC.dist2(c.x, c.z, sp[0], sp[1]) < 9; })) { sp.used = true; continue; }
       var r = sp[3], car = FC.cars.spawn(PARK_T[Math.floor(r * PARK_T.length) % PARK_T.length], sp[0], sp[1], sp[2], { parked: true, color: PARK_COL[Math.floor(r * 977) % PARK_COL.length] });
       if (!car) break;

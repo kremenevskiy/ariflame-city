@@ -44,10 +44,12 @@ from __future__ import annotations
 import asyncio
 import collections
 import json
+import logging
 import math
 import os
 import random
 import secrets
+import tempfile
 import time
 from pathlib import Path
 
@@ -790,7 +792,7 @@ class Modes:
     # ------------------------------------------------------------------ кто онлайн, друзья, «где он»
     def fid(self, rid: str) -> str:
         import hashlib
-        return hashlib.sha256(((admin_key() or "fcg") + ":" + rid).encode()).hexdigest()[:12]
+        return hashlib.sha256((admin_key() + ":" + rid).encode()).hexdigest()[:12]
 
     def _by_rid(self, rid: str):
         for o in self.clients.values():
@@ -1056,11 +1058,13 @@ class Modes:
 
 
 _KEY: dict[str, str] = {}
+log = logging.getLogger("fcg")
 
 
 def admin_key() -> str:
     """Ключ админ-ручки: FC_ADMIN_KEY или файл admin.key рядом с базой (создаётся сам, 0600). Наружу не печатаем.
-    Он же — соль fid (друзья, профили, рейтинги: на каждого игрока в «who») — поэтому кэш, а не чтение файла каждый раз."""
+    Он же — соль fid (друзья, профили, рейтинги: на каждого игрока в «who») — поэтому кэш, а не чтение файла каждый раз.
+    Пустым не бывает: постоянной соли «fcg» больше нет (аудит L-5) — по fid с известной солью короткий rid перебирается."""
     k = os.environ.get("FC_ADMIN_KEY", "").strip()
     if k:
         return k
@@ -1071,12 +1075,61 @@ def admin_key() -> str:
     return _KEY[db_path]
 
 
-def _admin_key_file(db_path: str) -> str:
-    p = Path(os.path.dirname(db_path) or ".") / "admin.key"
+def _read_key(p: str) -> str:
     try:
-        if not p.exists():
-            p.write_text(secrets.token_hex(16))
-            os.chmod(p, 0o600)
-        return p.read_text().strip()
-    except OSError:
+        st = os.stat(p)
+    except FileNotFoundError:
         return ""
+    if st.st_mode & 0o077:                                  # файл от прежней версии с правами umask — закрываем
+        try:
+            os.chmod(p, 0o600)
+        except OSError:
+            log.error("admin.key: не закрыть права до 0600 — %s", p)
+    with open(p, encoding="utf-8") as f:
+        return f.read().strip()
+
+
+def _admin_key_file(db_path: str) -> str:
+    """admin.key появляется сразу полным и с правами 0600: ключ пишем во временный файл (mkstemp — 0600, O_EXCL) и
+    ссылкой ставим на место — ни мига с правами umask, ни пустого файла для соседнего процесса (аудит L-5).
+    Не вышло ни прочесть, ни создать — громкая ошибка и случайный ключ до перезапуска: админ-ручка закрыта, fid
+    сменятся после рестарта, но соль не угадать."""
+    d = os.path.dirname(db_path) or "."
+    p = os.path.join(d, "admin.key")
+    try:
+        key = _read_key(p)
+        if key:
+            return key
+        os.makedirs(d, exist_ok=True)
+        fd, tmp = tempfile.mkstemp(prefix=".admin.key.", dir=d)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(secrets.token_hex(16))
+                f.flush()
+                os.fsync(f.fileno())
+            try:
+                os.link(tmp, p)                             # занято — ключ уже поставил соседний процесс
+            except FileExistsError:
+                if not _read_key(p):                        # пустой файл от старой версии, упавшей посреди записи
+                    os.replace(tmp, p)
+            except OSError:                                 # ФС без жёстких ссылок — создаём сразу 0600, только новым
+                try:
+                    fd2 = os.open(p, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+                except FileExistsError:
+                    pass
+                else:
+                    with os.fdopen(fd2, "w", encoding="utf-8") as f:
+                        f.write(secrets.token_hex(16))
+        finally:
+            try:
+                os.unlink(tmp)
+            except FileNotFoundError:
+                pass
+        key = _read_key(p)
+        if key:
+            return key
+    except (OSError, ValueError) as e:                     # ValueError — в файле не UTF-8
+        log.error("admin.key (%s): %s", p, e)
+    log.error("admin.key не прочитан и не создан — ключ админки и соль fid случайные до перезапуска; "
+              "задайте FC_ADMIN_KEY или права на папку базы")
+    return secrets.token_hex(16)

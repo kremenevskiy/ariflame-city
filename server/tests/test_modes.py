@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib.util
 import math
 import os
@@ -203,6 +204,41 @@ def test_weekly_winners_and_admin(env):
 
 def save(earned, pm, money=500, bank=0):
     return {"v": 1, "money": money, "bank": bank, "stats": {"earned": earned, "playMin": pm}}
+
+
+def test_admin_key_file_is_private_and_never_constant(tmp_path, monkeypatch, caplog):
+    """Аудит L-5: admin.key создавался с правами umask (chmod — потом), а без файла соль fid была «fcg»."""
+    old = os.umask(0)                                         # самый открытый umask: права — только от создания файла
+    try:
+        db = str(tmp_path / "a" / "game.db")
+        k1 = M._admin_key_file(db)
+        p = tmp_path / "a" / "admin.key"
+        assert len(k1) == 32 and p.read_text() == k1 and (p.stat().st_mode & 0o777) == 0o600
+        assert M._admin_key_file(db) == k1                    # второй раз — тот же ключ
+        assert [x.name for x in p.parent.iterdir()] == ["admin.key"]    # временного файла не осталось
+        os.chmod(p, 0o644)                                    # файл от прежней версии — права закрываются
+        assert M._admin_key_file(db) == k1 and (p.stat().st_mode & 0o777) == 0o600
+        p.write_text("")                                      # пустой (упала посреди записи) — заменяется новым
+        k2 = M._admin_key_file(db)
+        assert len(k2) == 32 and p.read_text() == k2
+    finally:
+        os.umask(old)
+    ro = tmp_path / "ro"
+    ro.mkdir()
+    os.chmod(ro, 0o500)                                       # папку базы не записать
+    monkeypatch.delenv("FC_ADMIN_KEY", raising=False)
+    monkeypatch.setenv("FC_DB", str(ro / "game.db"))
+    monkeypatch.setattr(M, "_KEY", {})
+    try:
+        with caplog.at_level("ERROR", logger="fcg"):
+            k3 = M.admin_key()
+        assert len(k3) == 32 and "admin.key" in caplog.text   # громко в журнал — и случайный ключ, а не «» → «fcg»
+        assert M.admin_key() == k3                            # до перезапуска — один и тот же
+        md = M.Modes(fcg.db, None, {})
+        assert md.fid("0000aaaa") == hashlib.sha256((k3 + ":0000aaaa").encode()).hexdigest()[:12]
+        assert md.fid("0000aaaa") != hashlib.sha256(b"fcg:0000aaaa").hexdigest()[:12]
+    finally:
+        os.chmod(ro, 0o700)
 
 
 def test_save_honesty_rollback_and_top(env):

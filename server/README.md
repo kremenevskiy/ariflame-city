@@ -14,6 +14,9 @@ cd server && uvicorn app:app --host 127.0.0.1 --port 8091 --ws websockets --ws-m
 
 Клиент для разработки — `npm run dev` в корне (статика `client/` на :8080 и прокси `/g/*` → :8091).
 Выкладка (systemd/Docker, обратный прокси, WebSocket, размер тела `/g/photo`) — [docs/DEPLOY.md](../docs/DEPLOY.md).
+Лимиты «с одного адреса» (кадры фоторежима, правки с сайта) берут адрес клиента у uvicorn (`clientip.py`): за прокси
+uvicorn запускают с `--proxy-headers --forwarded-allow-ips=<адрес своего прокси>` — не `*`, со `*` uvicorn берёт левый
+X-Forwarded-For, а его пишет сам клиент.
 
 | переменная | по умолчанию | что |
 |---|---|---|

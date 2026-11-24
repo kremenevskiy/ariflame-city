@@ -37,6 +37,8 @@ from collections import deque
 
 from fastapi import APIRouter, HTTPException, Request
 
+from clientip import client_ip  # адрес — из прокси-заголовков, разобранных uvicorn, а не левый X-Forwarded-For (M-2)
+
 BODY_MAX = 1_400_000             # байт запроса: zip в base64 (+33%) или текст правки
 PATCH_MAX = 400_000              # знаков в git diff
 FILE_MAX, FILES_MAX, FILES_TOTAL = 300_000, 40, 800_000
@@ -188,12 +190,6 @@ def _limit(ip: str) -> None:
             _hits.pop(k, None)
 
 
-def _ip(request: Request) -> str:
-    xf = request.headers.get("x-forwarded-for") or ""
-    ip = xf.split(",")[0].strip() if xf else (request.client.host if request.client else "")
-    return ip[:64] or "?"
-
-
 def _text(body: dict, name: str, lo: int, hi: int, need: bool = True) -> str:
     v = body.get(name)
     if v is None or v == "":
@@ -307,7 +303,7 @@ def make_router(contrib_dir) -> APIRouter:
         n, size = queue_usage()
         if n >= QUEUE_FILES or size >= QUEUE_BYTES:
             raise HTTPException(507, "очередь правок переполнена — попробуйте позже")
-        _limit(_ip(request))
+        _limit(client_ip(request))
         save(d)
         return {"id": d["id"], "status": d["status"], "files": _public(d)["files"]}
 

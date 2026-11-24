@@ -7,8 +7,8 @@
 расписанию (war.py). Ничего за настоящие деньги: создать клан — игровые $, награды — игровые $ и опыт.
 
 Правила: создать — с 5-го уровня (progress.py) и CREATE_COST игровых $ (списывает клиент, сервер сверяет с последним
-честным сохранением); до 30 человек; роли — лидер (один), заместители (до 4), участники. Вступить — сразу (клан открыт),
-по заявке (лидер/зам. решает) или по приглашению. После ухода — пауза LEAVE_WAIT до другого клана (чтобы не прыгать за
+честным сохранением и пишет «долгом» — modes.debit, как и взнос в общак); до 30 человек; роли — лидер (один),
+заместители (до 4), участники. Вступить — сразу (клан открыт), по заявке (лидер/зам. решает) или по приглашению. После ухода — пауза LEAVE_WAIT до другого клана (чтобы не прыгать за
 наградами). Тег 2–4 буквы/цифры (уникален без учёта похожих латинских и русских букв), название 3–24 знака.
 Чат — готовые фразы и эмоции, плюс короткий текст до 120 знаков: не чаще раза в 3 с и 20 за 10 мин, фильтр мата,
 политики и ссылок (clean). Общак — взносы игровыми $ (до 100 000 в сутки, не больше наличных из честного сохранения);
@@ -982,6 +982,7 @@ def make_router(get_store, verify, read_body, modes_obj=None, push=None, online=
     import progress
     r = APIRouter()
     credit = getattr(modes_obj, "credit", None)
+    debit = getattr(modes_obj, "debit", None)                # основание и взнос клиент списывает сам — долгом (H-2)
     acted: dict[str, float] = {}
 
     async def who(body: dict) -> str:
@@ -1045,6 +1046,8 @@ def make_router(get_store, verify, read_body, modes_obj=None, push=None, online=
         out = await asyncio.to_thread(create, st(), rid, body.get("tag") or "", body.get("name") or "",
                                       col if isinstance(col, int) else 0, emb if isinstance(emb, int) else 0,
                                       body.get("mode") or "req")
+        if debit:
+            await asyncio.to_thread(debit, rid, out["cost"])
         await after()
         return out
 
@@ -1169,6 +1172,8 @@ def make_router(get_store, verify, read_body, modes_obj=None, push=None, online=
         rid = await who(body)
         throttle(rid)
         out = await asyncio.to_thread(give, st(), rid, body.get("amount"))
+        if debit:
+            await asyncio.to_thread(debit, rid, out["paid"])
         await after(await asyncio.to_thread(crew_id_of, rid), {"t": "crew", "e": "bank", "bank": out["bank"]})
         return out
 

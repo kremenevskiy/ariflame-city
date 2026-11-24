@@ -33,8 +33,8 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 A, B = "tok-aaaa0001", "tok-bbbb0002"
 RA, RB = "aaaa0001", "bbbb0002"
-TABLES = ("props", "biz", "season_team", "season_pts", "season_me", "season_hold", "credit", "honest", "prog", "prog_city",
-          "prog_week", "biz_week", "biz_total", "infl_me", "ach", "crews", "crew_mem", "crew_req", "crew_chat",
+TABLES = ("props", "biz", "season_team", "season_pts", "season_me", "season_hold", "credit", "debit", "honest", "prog",
+          "prog_city", "prog_week", "biz_week", "biz_total", "infl_me", "ach", "crews", "crew_mem", "crew_req", "crew_chat",
           "crew_help", "crew_goal", "crew_claim", "crew_left", "war_pts", "war_me", "war_hold", "war_log", "war_eval",
           "races", "weekly_winners")
 

@@ -49,7 +49,8 @@ def client(monkeypatch):
         R.ensure(st)
         fcg.MODES.db()
         with st.lock:
-            for t in ("homes", "props", "biz", "season_team", "season_pts", "season_me", "season_hold", "credit", "honest"):
+            for t in ("homes", "props", "biz", "season_team", "season_pts", "season_me", "season_hold", "credit", "debit",
+                      "honest"):
                 st.db.execute(f"DELETE FROM {t}")
         yield c
 
@@ -220,10 +221,16 @@ def test_collect_near_remote_manager_and_credit(client):
         s.db.execute("UPDATE biz SET till = 1000, sim_at = ? WHERE bkey = 'm40_40'", (time.time() + 10,))
     fcg.by_rid[RA].state = [41.0, 0, 39.0]
     assert client.post("/g/biz/collect", json={"token": A, "city": "minsk", "key": "m40_40"}).json()["paid"] == 1000
-    # заработок от бизнеса не чит: сохранение с +5500 за минуту игры принимается
-    ok, _, why = fcg.MODES.check_save(RA, {"money": 100, "bank": 0, "stats": {"earned": 100, "playMin": 1}})
+    # заработок от бизнеса не чит: сохранение с +5500 за минуту игры принимается. Здание, оборудование и управляющего
+    # честный клиент оплатил наличными — первое сохранение это показывает (заработано больше, чем осталось денег)
+    price = client.post("/g/prop/mine", json={"token": A}).json()["props"][0]["price"]
+    spent = price + R.TYPES["cafe"]["equip"] + 3000
+    assert fcg.MODES.debit_of(RA) == spent
+    ok, _, why = fcg.MODES.check_save(RA, {"money": 100, "bank": 0, "stats": {"earned": spent + 100, "playMin": 1}})
     assert ok, why
-    ok, _, why = fcg.MODES.check_save(RA, {"money": 5600, "bank": 0, "stats": {"earned": 5600 + 8000, "playMin": 1.5}},
+    assert fcg.MODES.debit_of(RA) == 0
+    ok, _, why = fcg.MODES.check_save(RA, {"money": 5600, "bank": 0,
+                                           "stats": {"earned": spent + 5600 + 8000, "playMin": 1.5}},
                                       now=time.time() + 60)
     assert ok, why
     assert fcg.MODES.credit_of(RA) == 0

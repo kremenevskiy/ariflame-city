@@ -16,6 +16,10 @@
 настенных часов) до CAP; деньги на руках и в банке не больше заработанного. Превышение — сохранение не принимается,
 игроку возвращается последнее честное, cheat += 1; у cheat ≥ CHEAT_TOP игрока нет в топе. Деньги, которые выдал сам
 сервер (realty.py: касса бизнеса, рейс доставки, продажа здания), идут «кредитом» (таблица credit) сверх бюджета.
+Покупки за наличные, о которых сервер знает (здание, оборудование и улучшения бизнеса, сырьё, премия, управляющий, клан),
+он записывает «долгом» (таблица debit, 24.11): наличные живут у клиента, и сервер не может их списать сам — он ждёт,
+что сохранения покажут эти траты (заработано выросло больше, чем деньги на руках и в банке). Пока долг не покрыт тратами,
+кредит на ту же сумму не засчитывается: без этого «купил, не заплатив → продал» давало бесконечные деньги (аудит H-2).
 
 Коп против вора, совместный налёт — комнаты до 8 (налёт до 4) игроков поблизости, всё решает сервер: кто вор, касания,
 таймер, фургон инкассатора, мешки, делёж. Рейтинг районов — очки за честный заработок, гонки, раунды и налёты; район-
@@ -60,6 +64,7 @@ RATE = 8000.0               # $ бюджета за минуту игры (см�
 CAP = 300_000.0             # потолок бюджета: налёт на банк и финал сюжета — разовые крупные суммы
 FIRST = 200_000.0           # первое сохранение (игрок играл без входа): заработок ≤ минуты · RATE + FIRST
 CREDIT_CAP = 3_000_000.0    # деньги, выданные самим сервером (realty.py: касса бизнеса, продажа здания), — сверх бюджета
+START_MONEY = 500.0         # деньги нового сохранения (fcore.js fresh): у первого сохранения траты — заработок + 500 − деньги
 CHEAT_TOP = 3
 
 ROOM_MAX = {"cvt": 8, "coop": 4}
@@ -113,6 +118,24 @@ def _seg_d(px, pz, ax, az, bx, bz) -> float:
     return math.hypot(ax + dx * t - px, az + dz * t - pz)
 
 
+def _wealth_of(text: str | None) -> float | None:
+    """Деньги на руках и в банке в сохранённом честном сохранении; None — сохранения нет или оно нечитаемо."""
+    if not text:
+        return None
+    try:
+        d = json.loads(text)
+    except ValueError:
+        return None
+    if not isinstance(d, dict):
+        return None
+    w = 0.0
+    for k in ("money", "bank"):
+        v = d.get(k)
+        if isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v):
+            w += float(v)
+    return w
+
+
 class Modes:
     """Всё состояние режимов. app.py отдаёт ссылки на базу, отправку и соединения (тесты подменяют их так же)."""
 
@@ -155,6 +178,8 @@ class Modes:
                     CREATE TABLE IF NOT EXISTS friend_req (frm TEXT NOT NULL, dst TEXT NOT NULL, at INTEGER NOT NULL,
                         PRIMARY KEY (frm, dst));
                     CREATE TABLE IF NOT EXISTS credit (rid TEXT PRIMARY KEY, amount REAL NOT NULL DEFAULT 0,
+                        at INTEGER NOT NULL);
+                    CREATE TABLE IF NOT EXISTS debit (rid TEXT PRIMARY KEY, amount REAL NOT NULL DEFAULT 0,
                         at INTEGER NOT NULL);
                 """)
             self.schema_ready = True
@@ -324,12 +349,23 @@ class Modes:
         wealth = num(data.get("money")) + num(data.get("bank"))
         prev = self.q("SELECT * FROM honest WHERE rid = ?", (rid,), one=True)
         cr = self.credit_of(rid)                                    # выдано сервером (бизнес, продажа здания)
+        owed = self.debit_of(rid)                                   # куплено за наличные, трат в сохранениях ещё не видно
         text = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
         why = ""
         if num(data.get("money")) < 0 or num(data.get("bank")) < 0:
             why = "отрицательные деньги"
         elif wealth > earned + 2000:
             why = "денег больше, чем заработано"
+        # Траты с прошлого честного сохранения: заработано выросло, а денег на руках и в банке — меньше на столько же.
+        # Они гасят долг за покупки; непогашенный долг съедает кредит: «купил, не заплатив → продал» кредита не даёт.
+        # Какие именно вещи куплены, сервер не видит — и не должен: вещи живут у клиента, деньги одни на всё.
+        w0 = _wealth_of(prev["save"]) if prev is not None else None
+        if w0 is None:
+            spent = earned + START_MONEY - wealth                   # первое сохранение — все траты с начала игры
+        else:
+            spent = (earned - float(prev["earned"])) - (wealth - w0)
+        paid = min(owed, max(0.0, spent))
+        cr = max(0.0, cr - (owed - paid))
         if prev is None:
             if not why and earned > pm * RATE + FIRST + cr:
                 why = "заработок не по времени игры"
@@ -339,10 +375,12 @@ class Modes:
             self._honest(rid, earned, pm, now, max(0.0, min(CAP, FIRST - max(0.0, earned - cr) + pm * RATE)), text,
                          insert=True)
             self.credit_use(rid, min(cr, earned))
+            self.debit_pay(rid, paid)
             return True, None, ""
         e0, pm0, wall0, budget = float(prev["earned"]), float(prev["playmin"]), float(prev["wall"]), float(prev["budget"])
         reset = earned < e0 * 0.5 and pm < pm0                      # «начать заново» в настройках — честный сброс
         if reset and not why:
+            # долг не прощаем: иначе «купил, не заплатив → сброс → продал» снова давало бы кредит
             self._honest(rid, earned, pm, now, FIRST, text)
             return True, None, ""
         dpm = pm - pm0
@@ -363,6 +401,7 @@ class Modes:
             return False, back, why
         self._honest(rid, earned, pm, now, budget - max(0.0, de - cr), text)
         self.credit_use(rid, min(cr, max(0.0, de)))
+        self.debit_pay(rid, paid)
         if de > 0:
             self.add_points(rid, min(500.0, de / 100.0))
         return True, None, ""
@@ -404,6 +443,29 @@ class Modes:
         st = self.db()
         with st.lock:
             st.db.execute("UPDATE credit SET amount = max(0, amount - ?) WHERE rid = ?", (used, rid))
+
+    # покупки за наличные, о которых знает сервер (realty.py, homes.py, crews.py): клиент списывает их сам после ответа,
+    # следующее сохранение показывает трату и гасит долг (check_save). Записываем до ответа клиенту — иначе трата
+    # могла бы прийти раньше долга и пропасть. Без потолка: у честного игрока долг живёт до ближайшего сохранения.
+    def debit(self, rid: str, amount: float) -> None:
+        if not isinstance(amount, (int, float)) or isinstance(amount, bool) or not math.isfinite(amount) or amount <= 0:
+            return
+        st = self.db()
+        with st.lock:
+            st.db.execute("""INSERT INTO debit (rid, amount, at) VALUES (?, ?, ?) ON CONFLICT(rid) DO UPDATE SET
+                             amount = debit.amount + excluded.amount, at = excluded.at""",
+                          (rid, float(amount), int(time.time())))
+
+    def debit_of(self, rid: str) -> float:
+        r = self.q("SELECT amount FROM debit WHERE rid = ?", (rid,), one=True)
+        return float(r["amount"]) if r else 0.0
+
+    def debit_pay(self, rid: str, paid: float) -> None:
+        if paid <= 0:
+            return
+        st = self.db()
+        with st.lock:
+            st.db.execute("UPDATE debit SET amount = max(0, amount - ?) WHERE rid = ?", (paid, rid))
 
     def cheat_of(self, rid: str) -> int:
         r = self.q("SELECT cheat FROM honest WHERE rid = ?", (rid,), one=True)

@@ -172,6 +172,31 @@ def test_max_connections(client, monkeypatch):
             assert closed_code(b) == 1013
 
 
+def test_silent_sockets_take_a_place_and_are_closed(client, monkeypatch):
+    """Аудит M-4: сокеты без hi раньше не считались в MAX_CONN и висели 10 с."""
+    monkeypatch.setattr(fcg, "MAX_CONN", 2)
+    monkeypatch.setattr(fcg, "HI_WAIT", 0.4)
+    with client.websocket_connect("/g/ws", headers=ORIGIN) as a, client.websocket_connect("/g/ws", headers=ORIGIN) as b:
+        assert wait(lambda: fcg._hello[0] == 2)                # оба молчат — оба занимают место
+        with client.websocket_connect("/g/ws", headers=ORIGIN) as c:
+            assert closed_code(c) == 1013
+        assert closed_code(a) == 4002 and closed_code(b) == 4002   # hi не пришёл за HI_WAIT — закрыты
+    assert wait(lambda: fcg._hello[0] == 0)
+    with client.websocket_connect("/g/ws", headers=ORIGIN) as d:   # место освободилось
+        hello(d, guest="g-after")
+
+
+def test_huge_frame_closes_socket(client):
+    with client.websocket_connect("/g/ws", headers=ORIGIN) as ws:
+        hello(ws, guest="g-huge")
+        ws.send_text("x" * (fcg.FRAME_MAX + 1))
+        assert closed_code(ws) == 1009
+    with client.websocket_connect("/g/ws", headers=ORIGIN) as ws:
+        hello(ws, guest="g-huge2")
+        ws.send_bytes(b"x" * (fcg.FRAME_MAX + 1))
+        assert closed_code(ws) == 1009
+
+
 def test_second_tab_replaces_first(client):
     with client.websocket_connect("/g/ws", headers=ORIGIN) as a:
         hello(a, token="tok-0000bbbb")

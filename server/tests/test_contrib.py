@@ -155,6 +155,15 @@ def test_rate_limit_per_ip(client):
     assert client.post("/g/contrib", json=base(patch=PATCH)).status_code == 429
 
 
+def test_rate_limit_ignores_spoofed_forwarded_for(client):
+    """Аудит M-2: левый X-Forwarded-For пишет сам клиент — новый адрес в заголовке не даёт нового лимита."""
+    for i in range(contrib.IP_N):
+        r = client.post("/g/contrib", json=base(patch=PATCH), headers={"x-forwarded-for": f"203.0.113.{i}"})
+        assert r.status_code == 200
+    r = client.post("/g/contrib", json=base(patch=PATCH), headers={"x-forwarded-for": "198.51.100.77"})
+    assert r.status_code == 429
+
+
 def test_unknown_id_404(client):
     assert client.get("/g/contrib/AAAAAAAAAAAA").status_code == 404
     assert client.get("/g/contrib/..%2F..%2Fgame").status_code == 404

@@ -4,6 +4,8 @@
 продать». С владения настоящими зданиями (realty.py, 22.11 вечер) правда — таблица props (город, ключ здания); старые
 ручки ниже — для клиентов из кэша Telegram: те же ответы, что раньше, только по props города «flame». Таблица homes
 остаётся зеркалом (realty пишет в неё покупки и продажи Флейм-Сити) — откат сервера не теряет владельцев.
+Цену здесь присылает клиент (старый fhome.priceOf) — она же уходит «долгом» (modes.debit): продажа вернёт 70% только
+той суммы, которую сохранения покажут потраченной (аудит H-2).
 
   GET  /g/homes                     все занятые здания Флейм-Сити: [{b, kind, creature}] — без rid и имён (кэш 15 с)
   POST /g/home/mine  {token}        свои дома: [{building, kind, price, bought_at}]
@@ -61,6 +63,7 @@ def _building(v) -> int:
 def make_router(get_store, verify, read_body, modes_obj=None) -> APIRouter:
     r = APIRouter()
     credit = getattr(modes_obj, "credit", None)
+    debit = getattr(modes_obj, "debit", None)
 
     async def who(body: dict) -> str:
         rid = await verify(body.get("token") or "")
@@ -97,7 +100,10 @@ def make_router(get_store, verify, read_body, modes_obj=None) -> APIRouter:
             raise HTTPException(400, "цена вне пределов")
         kind = body.get("kind") if body.get("kind") in KINDS else "flat"
         throttle(rid)
-        return await asyncio.to_thread(claim, get_store(), rid, b, price, kind)
+        out = await asyncio.to_thread(claim, get_store(), rid, b, price, kind)
+        if debit and not out["already"]:                    # клиент списывает цену сам — до ответа пишем её долгом
+            await asyncio.to_thread(debit, rid, out["price"])
+        return out
 
     @r.post("/g/home/sell")
     async def home_sell(request: Request):

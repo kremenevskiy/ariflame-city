@@ -165,7 +165,7 @@ def week_of(now: float | None = None) -> int:
 
 def fid_of(rid: str) -> str:
     import modes                                    # тот же хэш, что у друзей (modes.Modes.fid): соль — ключ админки
-    return hashlib.sha256(((modes.admin_key() or "fcg") + ":" + rid).encode()).hexdigest()[:12]
+    return hashlib.sha256((modes.admin_key() + ":" + rid).encode()).hexdigest()[:12]
 
 
 def nick_of(row) -> str:

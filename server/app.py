@@ -29,6 +29,7 @@ media.py, events.py.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import itertools
 import json
 import logging
@@ -72,6 +73,8 @@ MAX_VIS = 60                  # не больше стольких соседе�
 SILENCE = 30.0                # тишина дольше — соединение мёртвое
 ONLINE_EVERY = 5.0            # счётчик «в городе N» всем
 MSG_MAX = 1024                # байт на сообщение клиента
+FRAME_MAX = MSG_MAX * 4       # кадр длиннее — не наш клиент (его hi с токеном — до 4 КБ): закрываем сокет сразу (1009)
+HI_WAIT = 5.0                 # hi клиент шлёт в onopen; молчит дольше — закрываем, место под MAX_CONN не держим
 RATE, BURST = 20.0, 40.0      # сообщений в секунду (ведро), всплеск
 BAD_LIMIT = 60                # столько отброшенных — отключаем (4008)
 LIM = 1300.0                  # координаты города ±1200 + запас
@@ -200,6 +203,81 @@ def db() -> Store:
 
 _tok: dict[str, tuple[str, float]] = {}
 
+# Каждый незнакомый токен — запрос к сервису аккаунтов: поток случайных токенов на любую ручку раньше превращался в
+# такой же поток к нему (аудит M-3). Поэтому: отказ помним NEG_TTL (по хэшу токена), один и тот же токен в полёте —
+# один запрос, одновременно — не больше WORLD_PAR, всего — не быстрее WORLD_RATE в секунду со всплеском WORLD_BURST
+# (всплеск — рестарт сервера: все игроки переподключаются разом). Ведро общее, не на адрес: за мостом и Caddy адрес
+# у всех игроков сейчас один (аудит M-2). Принятый токен — как раньше: кэш 10 минут, повторно вебхук не зовём.
+NEG_TTL, NEG_MAX = 60.0, 20000
+WORLD_PAR = 16
+WORLD_RATE, WORLD_BURST = 20.0, 400.0
+_neg: dict[bytes, float] = {}
+_flight: dict[str, asyncio.Future] = {}
+_wbucket = [WORLD_BURST, time.monotonic()]
+_wsem: list = [None, None]                                   # (цикл, семафор): asyncio.Semaphore в 3.9 привязан к циклу
+_wlog = [0.0]
+
+
+def _world_take() -> bool:
+    now = time.monotonic()
+    _wbucket[0] = min(WORLD_BURST, _wbucket[0] + (now - _wbucket[1]) * WORLD_RATE)
+    _wbucket[1] = now
+    if _wbucket[0] < 1:
+        if now - _wlog[0] > 60:                              # о потоке — раз в минуту, а не на каждый токен
+            _wlog[0] = now
+            log.warning("вебхук личности: больше %s проверок в секунду — лишние токены не проверяем", WORLD_RATE)
+        return False
+    _wbucket[0] -= 1
+    return True
+
+
+def _world_sem() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    if _wsem[0] is not loop:
+        _wsem[0], _wsem[1] = loop, asyncio.Semaphore(WORLD_PAR)
+    return _wsem[1]
+
+
+def _neg_key(token: str) -> bytes:
+    return hashlib.sha256(token.encode("utf-8", "surrogatepass")).digest()
+
+
+def _neg_put(k: bytes, until: float) -> None:
+    if len(_neg) >= NEG_MAX:
+        now = time.time()
+        for x in [x for x, t in _neg.items() if t <= now]:
+            del _neg[x]
+        if len(_neg) >= NEG_MAX:
+            _neg.clear()
+    _neg[k] = until
+
+
+async def _ask_world(token: str) -> str | None:
+    """Один запрос к вебхуку. Отказ (4xx, 200 без годного rid) — в отрицательный кэш; сбой сети и 5xx — нет:
+    сервис аккаунтов мог моргнуть, а токен — настоящий."""
+    k = _neg_key(token)
+    if not _world_take():
+        return None
+    async with _world_sem():
+        try:
+            async with httpx.AsyncClient(timeout=5, headers={"User-Agent": WORLD_UA}) as c:
+                r = await c.post(WORLD.rstrip("/") + "/w/me", json={"token": token})
+        except (httpx.HTTPError, ValueError) as e:
+            log.warning("вебхук личности не ответил: %s", e)
+            return None
+    rid = None
+    if r.status_code == 200:
+        try:
+            d = r.json()
+        except ValueError:
+            d = None
+        rid = d.get("rid") if isinstance(d, dict) else None
+    if rid and RID_RE.fullmatch(str(rid)):
+        return str(rid)
+    if r.status_code == 200 or (400 <= r.status_code < 500 and r.status_code != 429):
+        _neg_put(k, time.time() + NEG_TTL)
+    return None
+
 
 async def verify(token: str) -> str | None:
     if not isinstance(token, str) or not token or len(token) > 4096:
@@ -214,14 +292,18 @@ async def verify(token: str) -> str | None:
     if WORLD == "fake":
         rid = token[4:] if token.startswith("tok-") else None
     else:
-        try:
-            async with httpx.AsyncClient(timeout=5, headers={"User-Agent": WORLD_UA}) as c:
-                r = await c.post(WORLD.rstrip("/") + "/w/me", json={"token": token})
-            if r.status_code == 200:
-                rid = (r.json() or {}).get("rid")
-        except (httpx.HTTPError, ValueError) as e:
-            log.warning("вебхук личности не ответил: %s", e)
+        if _neg.get(_neg_key(token), 0.0) > now:            # этот токен только что не приняли — вебхук не зовём
             return None
+        fut = _flight.get(token)
+        if fut is None:                                     # тот же токен уже проверяется (сокет и HTTP разом) — ждём его
+            fut = asyncio.ensure_future(_ask_world(token))
+            _flight[token] = fut
+
+            def landed(f, t=token):
+                if _flight.get(t) is f:
+                    del _flight[t]
+            fut.add_done_callback(landed)
+        rid = await asyncio.shield(fut)                     # ушёл один из ждущих — проверка для остальных не рвётся
     if not rid or not RID_RE.fullmatch(str(rid)):
         return None
     if len(_tok) > 5000:
@@ -477,19 +559,14 @@ async def limit_body(request: Request, call_next):
     return await call_next(request)
 
 
-@app.websocket("/g/ws")
-async def ws_endpoint(ws: WebSocket):
-    global peak
-    if not origin_ok(ws.headers.get("origin")):
-        await ws.close(code=1008)
-        return
-    await ws.accept()
-    if len(clients) >= MAX_CONN:
-        await ws.close(code=1013)                            # «попробуй позже» — клиент сам переподключится с паузой
-        return
+_hello = [0]                  # сокеты от accept до hi (и проверки токена) — тоже занимают место под MAX_CONN
+
+
+async def _greet(ws: WebSocket) -> tuple[Client, dict] | None:
+    """Ждём hi (HI_WAIT), проверяем токен, заводим Client. None — сокет закрыт (молчал, мусор, ушёл)."""
     try:
-        first = await asyncio.wait_for(ws.receive_text(), timeout=10)
-        hi = json.loads(first) if len(first) <= MSG_MAX * 4 else None
+        first = await asyncio.wait_for(ws.receive_text(), timeout=HI_WAIT)
+        hi = json.loads(first) if len(first) <= FRAME_MAX else None
     except Exception:                                       # noqa: BLE001 — молчит, мусор, ушёл
         hi = None
     if not isinstance(hi, dict) or hi.get("t") != "hi":
@@ -497,7 +574,7 @@ async def ws_endpoint(ws: WebSocket):
             await ws.close(code=4002)
         except RuntimeError:                                 # клиент ушёл раньше (смоук curl после 101) — закрывать нечего
             pass
-        return
+        return None
     rid = await verify(hi.get("token") or "")
     guest = rid is None
     if guest:
@@ -510,8 +587,31 @@ async def ws_endpoint(ws: WebSocket):
         await kick(old, 4000)                                # тот же игрок открыл вторую вкладку — старая уходит
     c = Client(ws, next(_seq), rid, guest, cre)
     c.city = hi.get("city") if hi.get("city") in CITY_LIM else "flame"
-    clients[c.id] = c
+    clients[c.id] = c                                        # отсюда место считает clients, а не _hello
     by_rid[rid] = c
+    return c, hi
+
+
+@app.websocket("/g/ws")
+async def ws_endpoint(ws: WebSocket):
+    global peak
+    if not origin_ok(ws.headers.get("origin")):
+        await ws.close(code=1008)
+        return
+    await ws.accept()
+    # Считаем и тех, кто ещё не прислал hi: раньше 200 молчащих сокетов не занимали ни одного места (аудит M-4).
+    if len(clients) + _hello[0] >= MAX_CONN:
+        await ws.close(code=1013)                            # «попробуй позже» — клиент сам переподключится с паузой
+        return
+    _hello[0] += 1
+    try:
+        got = await _greet(ws)
+    finally:
+        _hello[0] -= 1
+    if got is None:
+        return
+    c, hi = got
+    rid, guest, cre = c.rid, c.guest, c.creature
     peak = max(peak, len(clients))
     try:
         c.sess = await asyncio.to_thread(db().session_start, rid, guest)
@@ -531,7 +631,14 @@ async def ws_endpoint(ws: WebSocket):
                 break
             raw = msg.get("text")
             if raw is None:
-                raw = (msg.get("bytes") or b"").decode("utf-8", "replace")
+                raw = msg.get("bytes") or b""
+            # размер — сразу после приёма, до разбора: огромный кадр — не игрок, держать такой сокет незачем
+            # (uvicorn сам принимает до --ws-max-size, по умолчанию 16 МБ — порог ставит выкладка)
+            if len(raw) > FRAME_MAX:
+                await kick(c, 1009)
+                break
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8", "replace")
             c.last = time.monotonic()
             ok = False
             if len(raw) <= MSG_MAX and take(c):

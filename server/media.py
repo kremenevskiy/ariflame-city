@@ -28,6 +28,8 @@ from collections import deque
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
+from clientip import client_ip  # адрес — из прокси-заголовков, разобранных uvicorn, а не левый X-Forwarded-For (M-2)
+
 PHOTO_MAX = 1_500_000            # байт: сторис 1080×1920 в JPEG ~0,4–0,9 МБ
 PHOTO_MIN = 4_000
 TTL = 48 * 3600
@@ -139,12 +141,6 @@ def sweep(folder: str, now: float | None = None) -> None:
     _state.update(swept=time.monotonic(), files=files, bytes=size)
 
 
-def _client_ip(request: Request) -> str:
-    xf = request.headers.get("x-forwarded-for") or ""
-    ip = xf.split(",")[0].strip() if xf else (request.client.host if request.client else "")
-    return ip[:64] or "?"
-
-
 def make_router(verify, photos_dir) -> APIRouter:
     """verify(token) → rid | None — та же проверка, что у /g/save; photos_dir() → папка файлов."""
     rt = APIRouter()
@@ -180,7 +176,7 @@ def make_router(verify, photos_dir) -> APIRouter:
         now = time.monotonic()
         if not _allow("r:" + rid, PLAYER_N, PLAYER_WIN, now):
             raise HTTPException(429, "не больше 6 кадров за 10 минут")
-        if not _allow("i:" + _client_ip(request), IP_N, IP_WIN, now) or not _allow("*", TOTAL_N, TOTAL_WIN, now):
+        if not _allow("i:" + client_ip(request), IP_N, IP_WIN, now) or not _allow("*", TOTAL_N, TOTAL_WIN, now):
             raise HTTPException(429, "слишком много кадров — попробуй позже")
         folder = photos_dir()
         os.makedirs(folder, exist_ok=True)

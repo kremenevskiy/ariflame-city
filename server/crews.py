@@ -7,8 +7,8 @@
 расписанию (war.py). Ничего за настоящие деньги: создать клан — игровые $, награды — игровые $ и опыт.
 
 Правила: создать — с 5-го уровня (progress.py) и CREATE_COST игровых $ (списывает клиент, сервер сверяет с последним
-честным сохранением); до 30 человек; роли — лидер (один), заместители (до 4), участники. Вступить — сразу (клан открыт),
-по заявке (лидер/зам. решает) или по приглашению. После ухода — пауза LEAVE_WAIT до другого клана (чтобы не прыгать за
+честным сохранением и пишет «долгом» — modes.debit, как и взнос в общак); до 30 человек; роли — лидер (один),
+заместители (до 4), участники. Вступить — сразу (клан открыт), по заявке (лидер/зам. решает) или по приглашению. После ухода — пауза LEAVE_WAIT до другого клана (чтобы не прыгать за
 наградами). Тег 2–4 буквы/цифры (уникален без учёта похожих латинских и русских букв), название 3–24 знака.
 Чат — готовые фразы и эмоции, плюс короткий текст до 120 знаков: не чаще раза в 3 с и 20 за 10 мин, фильтр мата,
 политики и ссылок (clean). Общак — взносы игровыми $ (до 100 000 в сутки, не больше наличных из честного сохранения);
@@ -192,6 +192,16 @@ def clean(text: str) -> str | None:
     if any(p in whole for p in _PHRASES):                # лозунги из нескольких слов
         return "без мата и политики — переформулируй"
     return None
+
+
+def safe_addr(addr) -> str:
+    """Адрес здания пишет клиент (realty.py: addr, до 80 знаков) — в чат клана и карточку штаба он идёт через тот же
+    фильтр, что текст чата (clean). Не прошёл — пусто: соклановцы увидят «здание <ключ>», как у записи без адреса."""
+    if not isinstance(addr, str):
+        return ""
+    a = "".join(ch for ch in addr if unicodedata.category(ch)[0] != "C" or ch.isspace())   # и записи до 24.11
+    a = re.sub(r"\s+", " ", a).strip()[:80]
+    return "" if not a or clean(a) else a
 
 
 def tag_key(tag: str) -> str:
@@ -711,9 +721,10 @@ def set_hq(store, rid: str, city: str, key: str | None, now: float | None = None
         if HQ_BAD.search(p["addr"] or "") or HQ_BAD.search(p["name"] or ""):
             raise HTTPException(403, "здесь штаб ставить нельзя")
         lvl = db.execute("SELECT hq_lvl FROM crews WHERE id = ?", (crew,)).fetchone()["hq_lvl"]
+        addr = safe_addr(p["addr"])                         # свободный текст клиента — только через фильтр чата
         db.execute("""UPDATE crews SET hq_city = ?, hq_key = ?, hq_x = ?, hq_z = ?, hq_dist = ?, hq_addr = ?, hq_lvl = ?
-                      WHERE id = ?""", (city, key, p["x"], p["z"], p["dist"], p["addr"], max(1, int(lvl or 0)), crew))
-        _sys(db, crew, f"🏢 Штаб клана: {p['addr'] or 'здание ' + key}", now)
+                      WHERE id = ?""", (city, key, p["x"], p["z"], p["dist"], addr or None, max(1, int(lvl or 0)), crew))
+        _sys(db, crew, f"🏢 Штаб клана: {addr or 'здание ' + key}", now)
     return {"ok": True}
 
 
@@ -940,7 +951,7 @@ def state(store, rid: str, online=None, now: float | None = None) -> dict:
         base.update({
             "crew": dict(card(db, crew), bank=int(c["bank"]), bank_total=int(c["bank_total"]), power=power(db, crew),
                          hq={"city": c["hq_city"], "key": c["hq_key"], "x": c["hq_x"], "z": c["hq_z"], "dist": c["hq_dist"],
-                             "addr": c["hq_addr"], "lvl": int(c["hq_lvl"])} if c["hq_key"] else None,
+                             "addr": safe_addr(c["hq_addr"]) or None, "lvl": int(c["hq_lvl"])} if c["hq_key"] else None,
                          color_i=int(c["color"]), emblem_i=int(c["emblem"]), created=int(c["created_at"])),
             "role": m["role"], "members": mem, "goals": goals, "all_claimed": "all" in claimed,
             "hold_claimed": "hold" in claimed, "held": [{"city": a, "d": b} for a, b in held],
@@ -982,6 +993,7 @@ def make_router(get_store, verify, read_body, modes_obj=None, push=None, online=
     import progress
     r = APIRouter()
     credit = getattr(modes_obj, "credit", None)
+    debit = getattr(modes_obj, "debit", None)                # основание и взнос клиент списывает сам — долгом (H-2)
     acted: dict[str, float] = {}
 
     async def who(body: dict) -> str:
@@ -1045,6 +1057,8 @@ def make_router(get_store, verify, read_body, modes_obj=None, push=None, online=
         out = await asyncio.to_thread(create, st(), rid, body.get("tag") or "", body.get("name") or "",
                                       col if isinstance(col, int) else 0, emb if isinstance(emb, int) else 0,
                                       body.get("mode") or "req")
+        if debit:
+            await asyncio.to_thread(debit, rid, out["cost"])
         await after()
         return out
 
@@ -1169,6 +1183,8 @@ def make_router(get_store, verify, read_body, modes_obj=None, push=None, online=
         rid = await who(body)
         throttle(rid)
         out = await asyncio.to_thread(give, st(), rid, body.get("amount"))
+        if debit:
+            await asyncio.to_thread(debit, rid, out["paid"])
         await after(await asyncio.to_thread(crew_id_of, rid), {"t": "crew", "e": "bank", "bank": out["bank"]})
         return out
 

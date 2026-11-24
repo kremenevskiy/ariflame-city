@@ -15,7 +15,9 @@ gta_mechanics_and_retention.md (купил → сырьё → производс
 Деньги игрока живут у клиента (FC.save): покупки клиент списывает сам. Сервер держит то, что дёшево проверить, — кто
 владеет зданием, цену по формуле (та же в fprop.js), уровень бизнеса, сотрудников (кандидатов выдаёт сервер), сырьё,
 кассу и метки времени. Выручку считает сервер (ленивая симуляция по часам) и выдаёт её «кредитом» честности
-(modes.credit): прирост заработка от бизнеса не принимается за чит.
+(modes.credit): прирост заработка от бизнеса не принимается за чит. Каждую покупку за наличные (здание, оборудование,
+улучшение, сырьё, премия, управляющий) ручка записывает «долгом» (modes.debit) до ответа клиенту: пока сохранения не
+покажут, что клиент её оплатил, кредит за продажу и выручку на ту же сумму не засчитывается (аудит H-2, 24.11).
 
 Таблицы (своя SQLite fcg; схема — CREATE IF NOT EXISTS, старые таблицы не трогаем):
   props (city, bkey PK) — здание: владелец, класс res|com, вид home|flat|biz, цена, адрес, x/z, дверь, площадь, этажи;
@@ -53,6 +55,7 @@ import json
 import math
 import re
 import time
+import unicodedata
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
@@ -786,7 +789,7 @@ def _income(db, rid: str, city: str, paid: int, kind: str, now: float) -> int:
 
 
 def _pay(b: dict, cost: int, how: str) -> str:
-    """Оплата из кассы (сервер проверяет) или наличными (их списывает клиент; сервер верит в пределах лимитов)."""
+    """Оплата из кассы (сервер проверяет) или наличными (их списывает клиент; ручка пишет сумму долгом — modes.debit)."""
     if how == "till":
         if b["till"] < cost:
             raise HTTPException(402, "в кассе не хватает — заплати наличными или подожди выручку")
@@ -1038,6 +1041,12 @@ def _key(city: str, v) -> str:
     return v
 
 
+def _plain(text: str) -> str:
+    """Одна строка без управляющих и невидимых знаков (переводы строк, нулевой ширины, смена направления текста)."""
+    text = "".join(ch for ch in text if unicodedata.category(ch)[0] != "C" or ch in "\t\n\r")
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _info(city: str, body: dict) -> dict:
     lim = CITY_XZ[city]
     out = {}
@@ -1049,8 +1058,8 @@ def _info(city: str, body: dict) -> dict:
             out[k] = round(float(v), 1)
     if ("x" in out) != ("z" in out):
         raise HTTPException(400, "x и z — вместе")
-    addr = body.get("addr")
-    out["addr"] = addr[:80] if isinstance(addr, str) else ""
+    addr = body.get("addr")                             # свободный текст клиента: соклановцам — через crews.safe_addr
+    out["addr"] = _plain(addr)[:80] if isinstance(addr, str) else ""
     f = body.get("facts") if isinstance(body.get("facts"), dict) else {}
     area, floors = f.get("area"), f.get("floors")
     out["area"] = round(float(area), 1) if _num(area) and 0 < area <= 40000 else 0.0
@@ -1062,9 +1071,21 @@ def _info(city: str, body: dict) -> dict:
 
 
 def make_router(get_store, verify, read_body, where=None, modes_obj=None) -> APIRouter:
-    """where(rid) → (город, x, z) игрока в онлайне или None; modes_obj.credit(rid, $) — кредит честности сохранений."""
+    """where(rid) → (город, x, z) игрока в онлайне или None; modes_obj.credit(rid, $) — кредит честности сохранений,
+    modes_obj.debit(rid, $) — долг за покупку наличными (клиент списывает её сам, сохранения показывают трату)."""
     r = APIRouter()
     credit = getattr(modes_obj, "credit", None)
+    debit = getattr(modes_obj, "debit", None)
+
+    async def charge(rid: str, amount) -> None:
+        """Покупка за наличные — долгом, до ответа: клиент спишет деньги, только получив ответ."""
+        if debit and amount:
+            await asyncio.to_thread(debit, rid, amount)
+
+    async def charged(rid: str, out: dict) -> dict:
+        if out.get("paid") == "cash":                       # из кассы — сервер списал сам, долга нет
+            await charge(rid, out.get("cost"))
+        return out
 
     async def who(body: dict) -> str:
         rid = await verify(body.get("token") or "")
@@ -1136,7 +1157,10 @@ def make_router(get_store, verify, read_body, where=None, modes_obj=None) -> API
         if not PRICE_MIN <= price <= PRICE_MAX:
             raise HTTPException(400, "цена вне пределов")
         throttle(rid)
-        return await asyncio.to_thread(claim, get_store(), rid, city, key, cls, price, info, body.get("primary") is True)
+        out = await asyncio.to_thread(claim, get_store(), rid, city, key, cls, price, info, body.get("primary") is True)
+        if not out["already"]:
+            await charge(rid, out["price"])
+        return out
 
     @r.post("/g/prop/sell")
     async def prop_sell(request: Request):
@@ -1161,7 +1185,9 @@ def make_router(get_store, verify, read_body, where=None, modes_obj=None) -> API
             raise HTTPException(400, "type — вид бизнеса из списка")
         w = body.get("word")
         w = int(w) if _num(w) and 0 <= w < len(WORDS) else 0
-        return await asyncio.to_thread(open_biz, get_store(), rid, city, key, t, w)
+        out = await asyncio.to_thread(open_biz, get_store(), rid, city, key, t, w)
+        await charge(rid, out["cost"])                      # оборудование клиент всегда оплачивает наличными
+        return out
 
     @r.post("/g/biz/state")
     async def biz_state(request: Request):
@@ -1184,12 +1210,12 @@ def make_router(get_store, verify, read_body, where=None, modes_obj=None) -> API
     @r.post("/g/biz/upgrade")
     async def biz_upgrade(request: Request):
         body, rid, city, key = await ck(request)
-        return await asyncio.to_thread(upgrade, get_store(), rid, city, key, pay_of(body))
+        return await charged(rid, await asyncio.to_thread(upgrade, get_store(), rid, city, key, pay_of(body)))
 
     @r.post("/g/biz/supply")
     async def biz_supply(request: Request):
         body, rid, city, key = await ck(request)
-        return await asyncio.to_thread(supply, get_store(), rid, city, key, pay_of(body))
+        return await charged(rid, await asyncio.to_thread(supply, get_store(), rid, city, key, pay_of(body)))
 
     @r.post("/g/biz/hire")
     async def biz_hire(request: Request):
@@ -1213,7 +1239,8 @@ def make_router(get_store, verify, read_body, where=None, modes_obj=None) -> API
     @r.post("/g/biz/bonus")
     async def biz_bonus(request: Request):
         body, rid, city, key = await ck(request)
-        return await asyncio.to_thread(bonus, get_store(), rid, city, key, emp_of(body), pay_of(body))
+        out = await asyncio.to_thread(bonus, get_store(), rid, city, key, emp_of(body), pay_of(body))
+        return await charged(rid, out)
 
     @r.post("/g/biz/raise")
     async def biz_raise(request: Request):
@@ -1223,7 +1250,9 @@ def make_router(get_store, verify, read_body, where=None, modes_obj=None) -> API
     @r.post("/g/biz/manager")
     async def biz_manager(request: Request):
         body, rid, city, key = await ck(request)
-        return await asyncio.to_thread(manager, get_store(), rid, city, key, body.get("on") is True)
+        out = await asyncio.to_thread(manager, get_store(), rid, city, key, body.get("on") is True)
+        await charge(rid, out["cost"])                      # управляющего клиент оплачивает наличными всегда (fbiz.js)
+        return out
 
     @r.post("/g/biz/run")
     async def biz_run(request: Request):

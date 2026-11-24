@@ -179,7 +179,12 @@
   // Игровой сервер (server/): ?gs=http://host:port — HTTP для разработки; ?mp=ws://host:port/g/ws | off — сокет;
   // иначе FC_CONFIG.server ("" — тот же адрес, что у страницы; "off" — одиночная игра).
   function qp(k) { var m = location.search.match(new RegExp("[?&]" + k + "=([^&]+)")); return m ? decodeURIComponent(m[1]) : null; }
-  var MPQ = qp("mp"), GSQ = qp("gs");
+  // Свой адрес сервера из ссылки — только на своей машине и в домашней сети (проверка с телефона). На сайте ссылка
+  // «?gs=https://чужой» отправляла бы токен входа игрока на чужой сервер и рисовала его ответы (аудит 24.11.2026);
+  // «off» (одиночная игра, проверки) работает везде.
+  var DEVHOST = /^(localhost|127\.0\.0\.1|\[::1\]|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[a-z0-9-]+\.local)$/i.test(location.hostname);
+  function srvq(k) { var v = qp(k); return v === "off" || DEVHOST ? v : null; }
+  var MPQ = srvq("mp"), GSQ = srvq("gs");
   function gsOff() { return MPQ === "off" || (!MPQ && !GSQ && FC.cfg.server === "off"); }
   function gs() {
     if (GSQ) return GSQ.replace(/\/$/, "");

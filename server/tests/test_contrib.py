@@ -126,6 +126,18 @@ def test_patch_checks(client):
     assert client.post("/g/contrib", json=base(patch=PATCH, title="")).status_code == 400
 
 
+@pytest.mark.parametrize("extra", [
+    "diff --git a/.gitattributes b/.gitattributes\nnew file mode 100644\n@@ -0,0 +1 @@\n+* -diff\n",              # без ---/+++
+    "diff --git a/client/a.js b/client/b.js\nsimilarity index 90%\nrename from client/a.js\nrename to client/b.js\n",
+    "diff --git a/client/x.js b/client/x.js\nold mode 100644\nnew mode 100755\n",
+    "diff --git a/client/l.js b/client/l.js\nnew file mode 120000\n--- /dev/null\n+++ b/client/l.js\n@@ -0,0 +1 @@\n+/proc/self/environ\n",
+    "diff --git a/client/./vendor/three-r160.js b/client/./vendor/three-r160.js\n--- a/client/./vendor/three-r160.js\n+++ b/client/./vendor/three-r160.js\n@@ -1 +1 @@\n-a\n+b\n",
+])
+def test_patch_tricks_rejected(client, extra):
+    r = client.post("/g/contrib", json=base(patch=PATCH + extra))
+    assert r.status_code == 400, (extra, r.text)
+
+
 def test_deleting_files_rejected(client):
     rm = "diff --git a/client/fstory.js b/client/fstory.js\ndeleted file mode 100644\n--- a/client/fstory.js\n+++ /dev/null\n@@ -1 +0,0 @@\n-var a = 1;\n"
     r = client.post("/g/contrib", json=base(patch=rm))

@@ -548,7 +548,7 @@
       all.innerHTML = "<b>🗺️ Все в городе (" + list.length + ")</b>" + (list.length ? list.slice(0, 30).map(function (p) {
         var cell = p.creature && FC.people ? FC.people.cellOf(p.creature) : -1;
         return "<div class='mp-who' style='margin-top:6px'>" + (cell >= 0 ? "<span class='fc' style='" + FC.hud.atlasStyle(cell) + "'></span>" : "<span>🥚</span>") +
-          "<span>" + (p.tag ? "[" + esc(p.tag) + "] " : "") + esc(p.creatureName) + (p.lvl ? " · ⭐" + p.lvl : "") + (p.friend ? " 🤝" : "") + " · " + esc(p.district) + " · " + (p.d > 1000 ? (p.d / 1000).toFixed(1) + " км" : p.d + " м") +
+          "<span>" + (p.tag ? "[" + esc(p.tag) + "] " : "") + esc(p.creatureName) + (p.lvl ? " · ⭐" + (+p.lvl | 0) : "") + (p.friend ? " 🤝" : "") + " · " + esc(p.district) + " · " + (p.d > 1000 ? (p.d / 1000).toFixed(1) + " км" : (+p.d | 0) + " м") +
           (p.m === 1 ? " · 🚗" : p.m === 3 ? " · ✈️" : p.m === 2 ? " · в здании" : "") + "</span> " + goBtn(p.id) +
           (p.fid && FC.ranks ? " <button type='button' class='ghost' data-prof='" + esc(p.fid) + "'>👤</button>" : "") +
           (!p.friend && !p.guest && !MP.guest ? " <button type='button' class='ghost' data-add='" + p.id + "'>➕</button>" : "") + "</div>";

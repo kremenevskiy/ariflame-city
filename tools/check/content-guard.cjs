@@ -33,25 +33,37 @@ const ALL = BASE === "--all", EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee
 const range = ALL ? [EMPTY_TREE] : [BASE + "...HEAD"];   // --all — рабочее дерево целиком
 const changed = git(["diff", "--name-status", "--diff-filter=AMR"].concat(range)).trim().split("\n").filter(Boolean)
   .map((l) => { const p = l.split("\t"); return { st: p[0][0], file: p[p.length - 1] }; });
-const diff = git(["diff", "-U0", "--no-color"].concat(range));
+// --text и без внешних diff/textconv: .gitattributes из PR («* -diff») не прячет строки от сторожа (аудит 24.11.2026)
+const diff = git(["-c", "core.quotePath=false", "diff", "-U0", "--no-color", "--text", "--no-ext-diff", "--no-textconv"].concat(range));
+const summary = git(["diff", "--summary"].concat(range));
 
 const block = [], review = [];
 const add = (list, file, line, why) => list.push({ file, line, why });
 
-// добавленные строки по файлам
+// добавленные строки по файлам. Строки ханка считаем по его заголовку (@@ … +c,d @@): добавленная строка кода «++ i;»
+// в диффе выглядит как «+++ i;» — раньше её принимали за заголовок нового файла, и всё ниже уходило мимо проверок
+// (аудит 24.11.2026). Заголовки «diff --git» / «+++» читаем только между ханками.
 const added = {};
-let cur = null, ln = 0;
+let cur = null, ln = 0, left = 0;
 diff.split("\n").forEach((l) => {
-  if (l.startsWith("+++ ")) { cur = l.slice(4).replace(/^b\//, ""); added[cur] = added[cur] || []; return; }
-  const h = /^@@ -\d+(?:,\d+)? \+(\d+)/.exec(l); if (h) { ln = +h[1]; return; }
-  if (cur && l.startsWith("+")) { added[cur].push([ln, l.slice(1)]); ln++; }
+  if (left > 0) {
+    if (l.startsWith("+")) { if (cur) added[cur].push([ln, l.slice(1)]); ln++; left--; return; }
+    if (l.startsWith(" ")) { ln++; left--; return; }
+    if (l.startsWith("-") || l.startsWith("\\")) return;
+    left = 0;
+  }
+  const g = /^diff --git a\/.* b\/(.*)$/.exec(l); if (g) { cur = g[1]; added[cur] = added[cur] || []; return; }
+  if (l.startsWith("+++ ")) { const f = l.slice(4); if (f !== "/dev/null") { cur = f.replace(/^b\//, ""); added[cur] = added[cur] || []; } return; }
+  const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/.exec(l); if (h) { ln = +h[1]; left = h[2] == null ? 1 : +h[2]; }
 });
+// символические ссылки: сборка и превью PR пошли бы по ссылке на чужой файл (/proc/self/environ и т. п.)
+summary.split("\n").forEach((l) => { const m = /^\s*create mode 120000 (.+)$/.exec(l) || /^\s*mode change \d+ => 120000 (.+)$/.exec(l); if (m) add(block, m[1], 0, "символическая ссылка — в репозитории только обычные файлы"); });
 
 const norm = W.norm, POL = W.POL, SL = W.SL, RU = W.RU;
 const isGen = (f) => GENERATED.some((r) => r.test(f));
 
 Object.keys(added).forEach((file) => {
-  if (SELF.includes(file) || file === "/dev/null") return;
+  if (SELF.includes(file) || file === "/dev/null" || BIN_EXT.test(file) || ASSET_EXT.test(file)) return;   // картинки и модели — не текст (их размер — ниже)
   const gen = isGen(file), lines = added[file];
   if (gen) { if (lines.length && !ALL) add(review, file, 0, "сгенерированные данные изменены — пересобраны тулом или руками?"); return; }
   const client = file.startsWith("client/") && /\.(js|html|json|css)$/.test(file);
@@ -63,11 +75,13 @@ Object.keys(added).forEach((file) => {
     if (SL.some((r) => r.test(t))) add(hard, file, n, "оскорбление");
     if (RU.some((r) => r.test(t))) add(review, file, n, "грубое слово");
     if (client) {
-      (text.match(/https?:\/\/[a-z0-9.-]+/gi) || []).forEach((u) => {
-        const host = u.replace(/^https?:\/\//i, "").toLowerCase();
-        if (!HOSTS_OK.some((h) => host === h || host.endsWith("." + h))) add(block, file, n, "чужой адрес в клиенте: " + host);
-      });
-      if (/\beval\s*\(|new\s+Function\s*\(|importScripts\s*\(/.test(text)) add(block, file, n, "eval / new Function / importScripts");
+      // адреса: http(s), ws(s) и «//хост.зона» в строке; «*.host» не пропускаем — только точные имена и их поддомены
+      ((text.match(/(?:https?|wss?):\/\/[a-z0-9.-]+/gi) || []).concat((text.match(/["'`]\/\/[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi) || [])))
+        .forEach((u) => {
+          const host = u.replace(/^(?:["'`]|(?:https?|wss?):)\/\//i, "").toLowerCase();
+          if (!HOSTS_OK.some((h) => host === h || (h.includes(".") && host.endsWith("." + h)))) add(block, file, n, "чужой адрес в клиенте: " + host);
+        });
+      if (/\beval\s*\(|\bFunction\s*\(|importScripts\s*\(|constructor\s*\.\s*constructor|constructor\s*\[\s*["'`]constructor/.test(text)) add(block, file, n, "eval / Function / importScripts");
       if (/document\.cookie|coinhive|cryptonight|webminer|\bminer\b/i.test(text)) add(block, file, n, "cookie или майнер");
       if (/navigator\.sendBeacon/.test(text)) add(review, file, n, "sendBeacon — куда и что отправляется?");
       if (/atob\s*\(\s*["'][A-Za-z0-9+/=]{80,}/.test(text) || /\\x[0-9a-f]{2}(\\x[0-9a-f]{2}){20,}/i.test(text)) add(block, file, n, "закодированная строка — похоже на спрятанный код");

@@ -52,7 +52,10 @@ jobs:
           PR: ${{ steps.pr.outputs.pr }}
         run: |
           [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "секретов Cloudflare нет — без превью"; exit 0; }
-          mkdir -p "$RUNNER_TEMP/site" && tar -xzf art/dist/dist.tgz -C "$RUNNER_TEMP/site"
+          mkdir -p "$RUNNER_TEMP/site" && tar -xzf art/dist/dist.tgz -C "$RUNNER_TEMP/site" --no-same-owner --no-same-permissions
+          # ссылки из PR не выкладываем: wrangler идёт по ним, и «ссылка на /proc/self/environ» выложила бы токен
+          # Cloudflare на превью (аудит 24.11.2026); в сборке их и так нет — tools/build.cjs их пропускает
+          find "$RUNNER_TEMP/site" -type l -print -delete
           # статика из PR — данные: никаких функций и заголовков Pages из чужого кода
           rm -rf "$RUNNER_TEMP/site/_worker.js" "$RUNNER_TEMP/site/functions" "$RUNNER_TEMP/site/_headers" "$RUNNER_TEMP/site/_redirects"
           mkdir -p "$RUNNER_TEMP/site/_shots" && cp art/shots/*.png "$RUNNER_TEMP/site/_shots/" 2>/dev/null || true

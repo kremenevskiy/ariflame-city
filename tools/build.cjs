@@ -10,7 +10,8 @@ const esbuild = require("esbuild");
 const SRC = path.resolve(__dirname, "..", "client");
 const OUT = path.resolve(__dirname, "..", "dist");
 fs.rmSync(OUT, { recursive: true, force: true });
-fs.cpSync(SRC, OUT, { recursive: true, filter: (p) => !p.endsWith(".DS_Store") });
+// символические ссылки не копируем: в выкладку и превью PR ушёл бы файл, на который ссылка указывает (аудит 24.11.2026)
+fs.cpSync(SRC, OUT, { recursive: true, filter: (p) => !p.endsWith(".DS_Store") && !fs.lstatSync(p).isSymbolicLink() });
 
 let before = 0, after = 0, n = 0;
 function squeeze(file) {

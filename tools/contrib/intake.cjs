@@ -91,7 +91,13 @@ function prBody(item, paths, guard) {
   return lines.filter((l) => l !== null).join("\n");
 }
 
+// поля из очереди — данные чужого человека: номер — строго формат сервера, в однострочных полях без переводов строк
+// (иначе — поддельные «Co-authored-by» в коммите и команды workflow в журнале; аудит 24.11.2026)
+const ONE = (v, n) => String(v || "").replace(/[\r\n\u2028\u2029]+/g, " ").replace(/^::/, ": :").slice(0, n);
+
 async function one(item) {
+  if (!/^[A-Za-z0-9_-]{12}$/.test(String(item.id))) { console.error("  непонятный номер правки — пропускаю"); return; }
+  item.title = ONE(item.title, 90); item.author = ONE(item.author, 40); item.tool = ONE(item.tool, 60);
   console.log("правка", item.id, "—", item.title);
   const text = [item.title, item.idea, item.note, item.author, item.tool].join("\n");
   if (W.bad && W.bad(text)) return report(item.id, "rejected", { reason: "в описании есть запрещённые слова или темы (правила: AGENTS.md «Правила содержания»)" });
@@ -99,6 +105,12 @@ async function one(item) {
   git(["checkout", "-q", "-B", branch, "origin/main"]);
   const why = apply(item);
   if (why) return report(item.id, "rejected", { reason: why });
+  // всё, что правка оставила в рабочей копии (и неотслеживаемое), — только обычные файлы в client/ и docs/:
+  // git apply умеет писать и мимо (заголовок без ---/+++, переименования, ссылки), а лишний .gitattributes ослепил бы сторожа
+  const touched = git(["-c", "core.quotePath=false", "status", "--porcelain=v1", "-z", "--untracked-files=all"]).split("\0")
+    .filter(Boolean).map((l) => l.slice(3));
+  const outside = touched.filter((p) => !pathOk(p) || (() => { try { return !fs.lstatSync(path.join(WT, p)).isFile(); } catch (e) { return false; } })());
+  if (outside.length) return report(item.id, "rejected", { reason: "правка трогает то, что с сайта менять нельзя (" + outside.slice(0, 3).join(", ") + ") — только обычные текстовые файлы в client/ и docs/" });
   git(["add", "-A", "client", "docs"]);
   const paths = git(["diff", "--cached", "--name-only"]).trim().split("\n").filter(Boolean);
   if (!paths.length) return report(item.id, "rejected", { reason: "правка ничего не меняет — такие файлы уже как в игре" });

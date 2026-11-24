@@ -180,7 +180,7 @@
       "Помогать — до " + st.help_day + " раз в сутки (сегодня " + st.help_today + "), за помощь — опыт.</p></div>";
     var others = st.helps.filter(function (h) { return !h.mine; });
     html += others.length ? others.map(function (h) {
-      return "<div class='row'><span>" + esc(h.nick) + " · " + esc(h.name) + "<br><span class='quiet'>" + h.got + "/" + h.need + " · " + ago(h.at) + " назад</span></span>" +
+      return "<div class='row'><span>" + esc(h.nick) + " · " + esc(h.name) + "<br><span class='quiet'>" + (+h.got | 0) + "/" + (+h.need | 0) + " · " + ago(h.at) + " назад</span></span>" +
         "<button type='button' data-cr-help='" + h.id + "'" + (h.helped || st.help_today >= st.help_day ? " disabled" : "") + ">" + (h.helped ? "помог ✓" : "Помочь") + "</button></div>";
     }).join("") : "<div class='card'><p>Просьб пока нет.</p></div>";
     var mine = (FC.biz && FC.biz.list ? FC.biz.list() : []) || [];
@@ -208,7 +208,7 @@
   function renderTeam(st) {
     var html = "";
     if (st.asks.length) html += "<h4>Заявки</h4><div class='card'>" + st.asks.map(function (a) {
-      return "<div class='cr-m'>" + face(a.cre) + "<span class='t' data-cr-fid='" + esc(a.fid) + "'><b>" + esc(a.nick) + "</b><i>⭐ " + a.lvl + "</i></span><button type='button' data-cr-ok='" + esc(a.fid) +
+      return "<div class='cr-m'>" + face(a.cre) + "<span class='t' data-cr-fid='" + esc(a.fid) + "'><b>" + esc(a.nick) + "</b><i>⭐ " + (+a.lvl | 0) + "</i></span><button type='button' data-cr-ok='" + esc(a.fid) +
         "'>Принять</button><button type='button' class='ghost' data-cr-deny='" + esc(a.fid) + "'>✕</button></div>";
     }).join("") + "</div>";
     html += "<h4>Состав " + st.members.length + "/" + st.max + "</h4><div class='card'>" + st.members.map(function (m) { return memberRow(m, st); }).join("") + "</div>";

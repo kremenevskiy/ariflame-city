@@ -29,6 +29,7 @@ import hmac
 import io
 import json
 import os
+import posixpath
 import re
 import secrets
 import time
@@ -70,6 +71,9 @@ def clean_path(p: str) -> str:
         raise HTTPException(400, f"файл «{p[:80]}»: путь с «..» не принимается")
     while p.startswith("./"):
         p = p[2:]
+    if "//" in p:
+        raise HTTPException(400, f"файл «{p[:80]}»: двойная косая в пути")
+    p = posixpath.normpath(p) if p else p          # «client/./vendor/…» — тот же vendor (аудит 24.11.2026)
     for root in ("client/", "docs/"):
         i = p.find("/" + root)
         if not p.startswith(root) and i >= 0:
@@ -93,7 +97,26 @@ def check_patch(patch: str) -> list[str]:
     if re.search(r"^(deleted file mode|\+\+\+ /dev/null)", patch, re.M):
         raise HTTPException(400, "правка удаляет файл — так нельзя: с сайта игру только улучшают (чинят, дорабатывают, добавляют)")
     paths: list[str] = []
+    sections = heads = 0
     for line in patch.splitlines():
+        # git apply берёт имя и из «diff --git a/X b/Y» (раздел без ---/+++), умеет переименования, смену режима и
+        # символические ссылки — всё это мимо проверки путей и сторожа. С сайта — только правка содержимого обычных
+        # файлов: новые файлы — 100644, без rename/copy/mode (аудит 24.11.2026).
+        if line.startswith("diff --git "):
+            sections += 1
+            m = re.match(r"diff --git a/(\S+) b/(\S+)$", line)
+            if not m:
+                raise HTTPException(400, "непонятный заголовок раздела: пути с пробелами не принимаются")
+            for p in m.groups():
+                cp = clean_path(p)
+                if cp not in paths:
+                    paths.append(cp)
+            continue
+        if line.startswith(("rename ", "copy ", "old mode", "new mode", "similarity index", "dissimilarity index")) or \
+                (line.startswith("new file mode") and line.strip() != "new file mode 100644"):
+            raise HTTPException(400, "переименования, смена режима и ссылки не принимаются — только правка файлов")
+        if line.startswith("+++ "):
+            heads += 1
         if line.startswith(("+++ ", "--- ")):
             p = line[4:].split("\t")[0].strip()
             if p == "/dev/null":
@@ -103,8 +126,8 @@ def check_patch(patch: str) -> list[str]:
             cp = clean_path(p)
             if cp not in paths:
                 paths.append(cp)
-        elif line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
-            clean_path(line.split(" ", 2)[2])
+    if sections and heads < sections:
+        raise HTTPException(400, "в каждом разделе нужны строки «--- a/…» и «+++ b/…» (пустые файлы не принимаются)")
     if not paths:
         raise HTTPException(400, "это не похоже на git diff: нет строк «--- a/…» и «+++ b/…»")
     return paths

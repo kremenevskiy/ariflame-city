@@ -112,7 +112,11 @@
   (function load() {
     var cfg = (FC.cfg && FC.cfg.places) || [];
     var dev = (global.location.search.match(/[?&]places=([^&]+)/) || [])[1];     // разработка: ?places=<пакет.json>
-    var urls = ["places/" + CITY + ".json"].concat(Array.isArray(cfg) ? cfg : [cfg]).concat(dev ? [decodeURIComponent(dev)] : []).filter(Boolean);
+    // только свой файл на этом же сайте: ссылка «?places=https://чужой/…» показывала бы чужие тексты и картинки под нашим
+    // адресом (аудит 24.11.2026)
+    try { dev = dev && decodeURIComponent(dev); } catch (e) { dev = null; }
+    if (dev && !/^[A-Za-z0-9_][A-Za-z0-9_./-]*\.json$/.test(dev) || (dev && dev.indexOf("..") >= 0)) dev = null;
+    var urls = ["places/" + CITY + ".json"].concat(Array.isArray(cfg) ? cfg : [cfg]).concat(dev ? [dev] : []).filter(Boolean);
     var left = urls.length, packs = new Array(urls.length);
     urls.forEach(function (u, i) {
       fetch(u, { cache: "no-cache" }).then(function (r) { return r.ok ? r.json() : null; }).catch(function () { return null; })

@@ -232,11 +232,11 @@
     var box = document.createElement("div"); box.className = "pg-day";
     var cells = D.table.map(function (t, i) {
       var cls = i + 1 < D.day ? "got" : i + 1 === D.day ? "now" : "";
-      return "<div class='" + cls + "'>день " + (i + 1) + "<b>" + FC.fmtMoney(t[0]).replace(" ", " ") + "</b>+" + t[1] + "</div>";
+      return "<div class='" + cls + "'>день " + (i + 1) + "<b>" + FC.fmtMoney(t[0]).replace(" ", " ") + "</b>+" + (+t[1] | 0) + "</div>";
     }).join("");
-    box.innerHTML = "<div class='cd'><h3>🔥 Награда за вход</h3><p>" + (D.streak ? "Серия " + D.streak + " дн. подряд — не прерывай: на седьмой день больше всего и титул «Завсегдатай»." :
+    box.innerHTML = "<div class='cd'><h3>🔥 Награда за вход</h3><p>" + (D.streak ? "Серия " + (+D.streak | 0) + " дн. подряд — не прерывай: на седьмой день больше всего и титул «Завсегдатай»." :
       "Заходи каждый день — награда растёт семь дней подряд.") + "</p><div class='pg-days'>" + cells + "</div>" +
-      "<button type='button' class='go'>Забрать " + FC.fmtMoney(D.money) + " и +" + D.xp + " опыта</button><button type='button' class='ghost'>Потом</button></div>";
+      "<button type='button' class='go'>Забрать " + FC.fmtMoney(D.money) + " и +" + (+D.xp | 0) + " опыта</button><button type='button' class='ghost'>Потом</button></div>";
     (document.getElementById("hud") || document.body).appendChild(box);
     if (FC.input && FC.input.enable) FC.input.enable(false);
     function close() { box.remove(); if (FC.input && FC.input.enable) FC.input.enable(true); }

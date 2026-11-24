@@ -55,6 +55,7 @@ import json
 import math
 import re
 import time
+import unicodedata
 
 from fastapi import APIRouter, HTTPException, Request, Response
 
@@ -1040,6 +1041,12 @@ def _key(city: str, v) -> str:
     return v
 
 
+def _plain(text: str) -> str:
+    """Одна строка без управляющих и невидимых знаков (переводы строк, нулевой ширины, смена направления текста)."""
+    text = "".join(ch for ch in text if unicodedata.category(ch)[0] != "C" or ch in "\t\n\r")
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _info(city: str, body: dict) -> dict:
     lim = CITY_XZ[city]
     out = {}
@@ -1051,8 +1058,8 @@ def _info(city: str, body: dict) -> dict:
             out[k] = round(float(v), 1)
     if ("x" in out) != ("z" in out):
         raise HTTPException(400, "x и z — вместе")
-    addr = body.get("addr")
-    out["addr"] = addr[:80] if isinstance(addr, str) else ""
+    addr = body.get("addr")                             # свободный текст клиента: соклановцам — через crews.safe_addr
+    out["addr"] = _plain(addr)[:80] if isinstance(addr, str) else ""
     f = body.get("facts") if isinstance(body.get("facts"), dict) else {}
     area, floors = f.get("area"), f.get("floors")
     out["area"] = round(float(area), 1) if _num(area) and 0 < area <= 40000 else 0.0

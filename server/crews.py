@@ -194,6 +194,16 @@ def clean(text: str) -> str | None:
     return None
 
 
+def safe_addr(addr) -> str:
+    """Адрес здания пишет клиент (realty.py: addr, до 80 знаков) — в чат клана и карточку штаба он идёт через тот же
+    фильтр, что текст чата (clean). Не прошёл — пусто: соклановцы увидят «здание <ключ>», как у записи без адреса."""
+    if not isinstance(addr, str):
+        return ""
+    a = "".join(ch for ch in addr if unicodedata.category(ch)[0] != "C" or ch.isspace())   # и записи до 24.11
+    a = re.sub(r"\s+", " ", a).strip()[:80]
+    return "" if not a or clean(a) else a
+
+
 def tag_key(tag: str) -> str:
     """Уникальность тега без учёта похожих латинских и русских букв (BOSS = ВОSS)."""
     return tag.lower().translate(_LOOK)
@@ -711,9 +721,10 @@ def set_hq(store, rid: str, city: str, key: str | None, now: float | None = None
         if HQ_BAD.search(p["addr"] or "") or HQ_BAD.search(p["name"] or ""):
             raise HTTPException(403, "здесь штаб ставить нельзя")
         lvl = db.execute("SELECT hq_lvl FROM crews WHERE id = ?", (crew,)).fetchone()["hq_lvl"]
+        addr = safe_addr(p["addr"])                         # свободный текст клиента — только через фильтр чата
         db.execute("""UPDATE crews SET hq_city = ?, hq_key = ?, hq_x = ?, hq_z = ?, hq_dist = ?, hq_addr = ?, hq_lvl = ?
-                      WHERE id = ?""", (city, key, p["x"], p["z"], p["dist"], p["addr"], max(1, int(lvl or 0)), crew))
-        _sys(db, crew, f"🏢 Штаб клана: {p['addr'] or 'здание ' + key}", now)
+                      WHERE id = ?""", (city, key, p["x"], p["z"], p["dist"], addr or None, max(1, int(lvl or 0)), crew))
+        _sys(db, crew, f"🏢 Штаб клана: {addr or 'здание ' + key}", now)
     return {"ok": True}
 
 
@@ -940,7 +951,7 @@ def state(store, rid: str, online=None, now: float | None = None) -> dict:
         base.update({
             "crew": dict(card(db, crew), bank=int(c["bank"]), bank_total=int(c["bank_total"]), power=power(db, crew),
                          hq={"city": c["hq_city"], "key": c["hq_key"], "x": c["hq_x"], "z": c["hq_z"], "dist": c["hq_dist"],
-                             "addr": c["hq_addr"], "lvl": int(c["hq_lvl"])} if c["hq_key"] else None,
+                             "addr": safe_addr(c["hq_addr"]) or None, "lvl": int(c["hq_lvl"])} if c["hq_key"] else None,
                          color_i=int(c["color"]), emblem_i=int(c["emblem"]), created=int(c["created_at"])),
             "role": m["role"], "members": mem, "goals": goals, "all_claimed": "all" in claimed,
             "hold_claimed": "hold" in claimed, "held": [{"city": a, "d": b} for a, b in held],

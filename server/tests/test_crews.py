@@ -205,6 +205,22 @@ def test_bank_and_hq(client):
     with s.lock:
         s.db.execute("UPDATE crews SET bank = 200000 WHERE id = ?", (cid,))
     assert client.post("/g/crew/hqup", json={"token": TOK[RA]}).json()["lvl"] == 2
+    assert "Бизнес-центр «Пик»" in [m["v"] for m in me["chat"]][-1]
+
+
+def test_hq_address_goes_through_chat_filter(client):
+    """Аудит L-2: адрес здания пишет клиент (до 80 знаков) — в чат клана он раньше шёл мимо фильтра."""
+    make_crew(client)
+    prop(RA, "14", "msk", cls="com", landmark=1, addr="Заходи t.me/spam_channel_x")
+    assert client.post("/g/crew/hq", json={"token": TOK[RA], "city": "flame", "key": "14"}).status_code == 200
+    me = client.post("/g/crew/me", json={"token": TOK[RA]}).json()
+    assert me["crew"]["hq"]["addr"] is None                                       # карточка — без чужого текста
+    assert me["chat"][-1]["v"] == "🏢 Штаб клана: здание 14"                       # а штаб — всё равно поставлен
+    with st().lock:                                                              # запись до правки — тоже фильтруем
+        st().db.execute("UPDATE crews SET hq_addr = 'купи у @spam_seller' WHERE hq_key = '14'")
+    assert client.post("/g/crew/me", json={"token": TOK[RA]}).json()["crew"]["hq"]["addr"] is None
+    # адрес при покупке — одна строка без управляющих знаков
+    assert R._info("minsk", {"addr": "ул.\u202eНемига,\n5\x00"})["addr"] == "ул.Немига, 5"
 
 
 # ------------------------------------------------------------------ помощь: таймер бизнеса вперёд

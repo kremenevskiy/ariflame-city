@@ -29,6 +29,7 @@ media.py, events.py.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import itertools
 import json
 import logging
@@ -200,6 +201,81 @@ def db() -> Store:
 
 _tok: dict[str, tuple[str, float]] = {}
 
+# Каждый незнакомый токен — запрос к сервису аккаунтов: поток случайных токенов на любую ручку раньше превращался в
+# такой же поток к нему (аудит M-3). Поэтому: отказ помним NEG_TTL (по хэшу токена), один и тот же токен в полёте —
+# один запрос, одновременно — не больше WORLD_PAR, всего — не быстрее WORLD_RATE в секунду со всплеском WORLD_BURST
+# (всплеск — рестарт сервера: все игроки переподключаются разом). Ведро общее, не на адрес: за мостом и Caddy адрес
+# у всех игроков сейчас один (аудит M-2). Принятый токен — как раньше: кэш 10 минут, повторно вебхук не зовём.
+NEG_TTL, NEG_MAX = 60.0, 20000
+WORLD_PAR = 16
+WORLD_RATE, WORLD_BURST = 20.0, 400.0
+_neg: dict[bytes, float] = {}
+_flight: dict[str, asyncio.Future] = {}
+_wbucket = [WORLD_BURST, time.monotonic()]
+_wsem: list = [None, None]                                   # (цикл, семафор): asyncio.Semaphore в 3.9 привязан к циклу
+_wlog = [0.0]
+
+
+def _world_take() -> bool:
+    now = time.monotonic()
+    _wbucket[0] = min(WORLD_BURST, _wbucket[0] + (now - _wbucket[1]) * WORLD_RATE)
+    _wbucket[1] = now
+    if _wbucket[0] < 1:
+        if now - _wlog[0] > 60:                              # о потоке — раз в минуту, а не на каждый токен
+            _wlog[0] = now
+            log.warning("вебхук личности: больше %s проверок в секунду — лишние токены не проверяем", WORLD_RATE)
+        return False
+    _wbucket[0] -= 1
+    return True
+
+
+def _world_sem() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    if _wsem[0] is not loop:
+        _wsem[0], _wsem[1] = loop, asyncio.Semaphore(WORLD_PAR)
+    return _wsem[1]
+
+
+def _neg_key(token: str) -> bytes:
+    return hashlib.sha256(token.encode("utf-8", "surrogatepass")).digest()
+
+
+def _neg_put(k: bytes, until: float) -> None:
+    if len(_neg) >= NEG_MAX:
+        now = time.time()
+        for x in [x for x, t in _neg.items() if t <= now]:
+            del _neg[x]
+        if len(_neg) >= NEG_MAX:
+            _neg.clear()
+    _neg[k] = until
+
+
+async def _ask_world(token: str) -> str | None:
+    """Один запрос к вебхуку. Отказ (4xx, 200 без годного rid) — в отрицательный кэш; сбой сети и 5xx — нет:
+    сервис аккаунтов мог моргнуть, а токен — настоящий."""
+    k = _neg_key(token)
+    if not _world_take():
+        return None
+    async with _world_sem():
+        try:
+            async with httpx.AsyncClient(timeout=5, headers={"User-Agent": WORLD_UA}) as c:
+                r = await c.post(WORLD.rstrip("/") + "/w/me", json={"token": token})
+        except (httpx.HTTPError, ValueError) as e:
+            log.warning("вебхук личности не ответил: %s", e)
+            return None
+    rid = None
+    if r.status_code == 200:
+        try:
+            d = r.json()
+        except ValueError:
+            d = None
+        rid = d.get("rid") if isinstance(d, dict) else None
+    if rid and RID_RE.fullmatch(str(rid)):
+        return str(rid)
+    if r.status_code == 200 or (400 <= r.status_code < 500 and r.status_code != 429):
+        _neg_put(k, time.time() + NEG_TTL)
+    return None
+
 
 async def verify(token: str) -> str | None:
     if not isinstance(token, str) or not token or len(token) > 4096:
@@ -214,14 +290,18 @@ async def verify(token: str) -> str | None:
     if WORLD == "fake":
         rid = token[4:] if token.startswith("tok-") else None
     else:
-        try:
-            async with httpx.AsyncClient(timeout=5, headers={"User-Agent": WORLD_UA}) as c:
-                r = await c.post(WORLD.rstrip("/") + "/w/me", json={"token": token})
-            if r.status_code == 200:
-                rid = (r.json() or {}).get("rid")
-        except (httpx.HTTPError, ValueError) as e:
-            log.warning("вебхук личности не ответил: %s", e)
+        if _neg.get(_neg_key(token), 0.0) > now:            # этот токен только что не приняли — вебхук не зовём
             return None
+        fut = _flight.get(token)
+        if fut is None:                                     # тот же токен уже проверяется (сокет и HTTP разом) — ждём его
+            fut = asyncio.ensure_future(_ask_world(token))
+            _flight[token] = fut
+
+            def landed(f, t=token):
+                if _flight.get(t) is f:
+                    del _flight[t]
+            fut.add_done_callback(landed)
+        rid = await asyncio.shield(fut)                     # ушёл один из ждущих — проверка для остальных не рвётся
     if not rid or not RID_RE.fullmatch(str(rid)):
         return None
     if len(_tok) > 5000:

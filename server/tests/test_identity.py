@@ -29,9 +29,14 @@ def run(coro):
 
 @pytest.fixture(autouse=True)
 def fresh_cache():
-    fcg._tok.clear()
+    def clean():
+        fcg._tok.clear()
+        fcg._neg.clear()
+        fcg._flight.clear()
+        fcg._wbucket[:] = [fcg.WORLD_BURST, fcg.time.monotonic()]
+    clean()
     yield
-    fcg._tok.clear()
+    clean()
 
 
 def test_default_is_guest_only(monkeypatch):
@@ -86,3 +91,58 @@ def test_webhook_down_means_guest(monkeypatch):
     monkeypatch.setattr(fcg, "WORLD", "https://id.example.org")
     _mock(monkeypatch, handler)
     assert run(fcg.verify("good")) is None
+
+
+def test_random_tokens_do_not_flood_the_webhook(monkeypatch):
+    """Аудит M-3: случайный токен на любую ручку — запрос к сервису аккаунтов. Отказ помним, поток режем ведром."""
+    seen = []
+
+    def handler(req):
+        seen.append(req)
+        return httpx.Response(401, json={"detail": "нет"})
+
+    monkeypatch.setattr(fcg, "WORLD", "https://id.example.org")
+    _mock(monkeypatch, handler)
+    for _ in range(5):                                       # один и тот же плохой токен — один запрос за NEG_TTL
+        assert run(fcg.verify("junk-1")) is None
+    assert len(seen) == 1
+    monkeypatch.setattr(fcg, "WORLD_BURST", 10.0)
+    monkeypatch.setattr(fcg, "WORLD_RATE", 0.001)
+    fcg._wbucket[:] = [10.0, fcg.time.monotonic()]
+    for i in range(50):                                      # 50 разных случайных — к вебхуку уходит не больше ведра
+        assert run(fcg.verify(f"junk-{i + 100}")) is None
+    assert len(seen) == 1 + 10
+
+
+def test_outage_is_not_cached_and_good_token_still_logs_in(monkeypatch):
+    state = {"down": True, "n": 0}
+
+    def handler(req):
+        state["n"] += 1
+        if state["down"]:
+            return httpx.Response(503, text="перезапуск")
+        return httpx.Response(200, json={"rid": "0123abcd"})
+
+    monkeypatch.setattr(fcg, "WORLD", "https://id.example.org")
+    _mock(monkeypatch, handler)
+    assert run(fcg.verify("good")) is None                   # сервис моргнул — игрок пока гость…
+    state["down"] = False
+    assert run(fcg.verify("good")) == "0123abcd"             # …но отказ не запомнен: следующий вход проходит
+    assert run(fcg.verify("good")) == "0123abcd" and state["n"] == 2
+
+
+def test_same_token_at_once_is_one_request(monkeypatch):
+    seen = []
+
+    async def handler(req):
+        seen.append(req)
+        await asyncio.sleep(0.05)
+        return httpx.Response(200, json={"rid": "0123abcd"})
+
+    monkeypatch.setattr(fcg, "WORLD", "https://id.example.org")
+    _mock(monkeypatch, handler)
+
+    async def both():
+        return await asyncio.gather(*(fcg.verify("good") for _ in range(5)))
+    assert run(both()) == ["0123abcd"] * 5 and len(seen) == 1
+    assert not fcg._flight

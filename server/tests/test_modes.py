@@ -445,6 +445,33 @@ def test_who_friends_locate(env):
     assert not md.friend_rids("0000f0a1") and not md.friend_rids("0000f0b2")
 
 
+def test_locate_exact_only_for_friends(env):
+    """Аудит L-4: «где он» отдавал точное место и здание любого игрока в сети — с «Найди свой дом» это его дом."""
+    md, clk, sent, clients = env
+    with fcg.db().lock:
+        fcg.db().db.execute("DELETE FROM friends")
+        fcg.db().db.execute("DELETE FROM friend_req")
+    a, b = Fake(rid="0000f2a1", x=0.0, z=0.0, m=0), Fake(rid="0000f2b2", x=1234.4, z=-567.8, m=2)
+    b.state[1], b.state[7] = 13.0, 4321                                     # на этаже, внутри здания 4321
+    g = Fake(rid="g-guest2", guest=True)
+    for c in (a, b, g):
+        clients[c.id] = c
+
+    async def go():
+        await md.social(a, {"t": "locate", "q": 1, "id": b.id})            # не друг
+        await md.social(g, {"t": "locate", "q": 2, "id": b.id})            # гость
+        clk.t += 2
+        await md.social(a, {"t": "friend", "a": "add", "id": b.id})
+        await md.social(b, {"t": "friend", "a": "accept", "id": a.id})
+        await md.social(a, {"t": "locate", "q": 3, "id": b.id})            # друг
+    run(go)
+    loc = {m["q"]: m for i, m in sent if m.get("t") == "locate"}
+    for q in (1, 2):                                                        # чужой: клетка 20 м, без здания — но ok:
+        assert loc[q]["ok"] and loc[q]["x"] == 1240 and loc[q]["z"] == -560 and loc[q]["inside"] is None
+        assert loc[q]["exact"] is False                                     # «📍 К нему» всё так же ведёт рядом
+    assert loc[3]["exact"] and loc[3]["x"] == 1234 and loc[3]["z"] == -568 and loc[3]["inside"] == 4321
+
+
 def test_counter_request_makes_friends(env):
     md, clk, sent, clients = env
     with fcg.db().lock:

@@ -28,12 +28,14 @@
 Кто онлайн, друзья, «где он» (22.11, для «тыкнуть на карте и оказаться возле друга»): who — все игроки с огрублёнными
 до WHO_GRID м координатами, не чаще раза в WHO_EVERY с; друзья — взаимно (запрос → принять или встречный запрос), в SQLite
 по rid; наружу — номер соединения, вид существа и непрозрачный fid (хэш rid с солью сервера), rid и имён нет.
+locate (24.11, аудит L-4): точное место и здание — только другу; остальным — та же клетка WHO_GRID, что в who, без здания.
 
 Протокол (кадры WebSocket, в дополнение к app.py; старый клиент их не шлёт и не получает):
   клиент → who {q}; friends {q}; friend {a: add|accept|decline|remove, id?, fid?}; locate {q, id};
            race {a: start|quit, id}; room {a: create|join|leave|start|role, kind: cvt|coop, room, role};
            coop {a: hit|bag, p}; dist {d: msk|minsk|ala|center}
-  сервер → who {q, ps}; friends {q, ps, req}; friend {e: req|added|removed, …}; locate {q, id, ok, x, y, z, inside, m} (друг в другом городе — ok: false, city);
+  сервер → who {q, ps}; friends {q, ps, req}; friend {e: req|added|removed, …}; locate {q, id, ok, x, y, z, inside, m, exact}
+           (не друг — клетка WHO_GRID, inside: null; друг в другом городе — ok: false, city);
            race {e: go|cp|done|dq, …}; room {e: invite|state|start|pos|catch|end|gone|left, …}; coop {e: van|phase, …}
 HTTP: GET /g/races, /g/districts, /g/admin/winners (заголовок X-Admin-Key).
 """
@@ -836,8 +838,18 @@ class Modes:
             if getattr(o, "city", "flame") != getattr(c, "city", "flame"):     # друг в другом городе — координаты не те
                 await self.send(c, {"t": "locate", "q": q, "ok": False, "city": getattr(o, "city", "flame"), "why": "другой город"})
                 return True
-            await self.send(c, {"t": "locate", "q": q, "ok": True, "id": o.id, "x": round(s[0]), "y": round(s[1]),
-                                "z": round(s[2]), "inside": s[7], "m": s[4]})
+            # Точно (до метра и здание, в котором он, — клиент ведёт к его двери) — только другу. Остальным — как в who:
+            # клетка WHO_GRID без здания: «📍 К нему» по-прежнему ставит рядом, но не показывает, в каком доме человек
+            # (с «Найди свой дом» в Минске 1:1 это может быть его настоящий дом — аудит L-4).
+            exact = o is c or (not c.guest and not o.guest and o.rid in set(await asyncio.to_thread(self.friend_rids, c.rid)))
+            if exact:
+                await self.send(c, {"t": "locate", "q": q, "ok": True, "id": o.id, "x": round(s[0]), "y": round(s[1]),
+                                    "z": round(s[2]), "inside": s[7], "m": s[4], "exact": True})
+            else:
+                g = WHO_GRID
+                await self.send(c, {"t": "locate", "q": q, "ok": True, "id": o.id, "x": round(s[0] / g) * g,
+                                    "y": round(s[1] / g) * g, "z": round(s[2] / g) * g, "inside": None, "m": s[4],
+                                    "exact": False})
             return True
         if t == "friends":
             if c.guest:

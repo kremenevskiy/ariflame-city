@@ -13,8 +13,8 @@ DAY_CAP. Касса и доставки бизнесов, гонки (время
 сервер начисляет сам (зовут realty.py, modes.py, season.py, crews.py, war.py). Первый раз опыт заводится из честного
 заработка (таблица honest, modes.check_save) — не выше SEED_LVL, чтобы старые игроки не начинали с первого уровня.
 
-Наружу — непрозрачный fid (тот же хэш, что у друзей modes.fid), ник из списка слов + число, вид существа, уровень, тег
-клана. Ни rid, ни имени агента. Читеры (honest.cheat ≥ modes.CHEAT_TOP) в рейтинги не попадают.
+Наружу — непрозрачный fid (тот же хэш, что у друзей modes.fid), ник (свой — nicks.py, нет своего — слово из списка + число),
+вид существа, уровень, тег клана. Ни rid, ни имени агента. Читеры (honest.cheat ≥ modes.CHEAT_TOP) в рейтинги не попадают.
 
 Таблицы (своя SQLite, CREATE IF NOT EXISTS; старые не меняются): prog (опыт, уровень, ник, титулы, сутки, серия,
 состояние), prog_city (опыт по городам), prog_week (опыт за неделю по городам), biz_week / biz_total (выручка бизнесов),
@@ -147,6 +147,8 @@ def ensure(store) -> None:
     realty.ensure(store)
     with store.lock:
         store.db.executescript(SCHEMA)
+        import nicks
+        nicks.ensure(store.db)
         store.db.execute("""INSERT OR IGNORE INTO biz_total (rid, city, paid)
                             SELECT owner_rid, city, sum(earned) FROM biz GROUP BY owner_rid, city""")
         store.db.execute("""INSERT OR IGNORE INTO infl_me (week, city, rid, pts)
@@ -168,7 +170,13 @@ def fid_of(rid: str) -> str:
     return hashlib.sha256((modes.admin_key() + ":" + rid).encode()).hexdigest()[:12]
 
 
-def nick_of(row) -> str:
+def nick_of(row, db=None) -> str:
+    """Ник игрока для других. С db — свой ник (nicks.py), если игрок его выбрал; без db или без своего — слово + число."""
+    if db is not None:
+        import nicks
+        own = nicks.get(db, row["rid"])
+        if own:
+            return own
     w, n = int(row["nick_w"]), int(row["nick_n"])
     if w < 0:
         h = int(row["fid"][:8], 16)
@@ -480,7 +488,7 @@ def public(db, r, now: float, full: bool = False) -> dict:
     lvl, x = int(r["lvl"]), int(r["xp"])
     import crews
     cr = crews.crew_of(db, rid)
-    out = {"fid": r["fid"], "nick": nick_of(r), "cre": cre["creature"] if cre else None, "lvl": lvl, "xp": x,
+    out = {"fid": r["fid"], "nick": nick_of(r, db), "cre": cre["creature"] if cre else None, "lvl": lvl, "xp": x,
            "cur": need(lvl), "next": need(lvl + 1), "title": title_name(db, r, now), "worth": int(r["worth"]),
            "biz_week": int(bw), "biz_all": int(bt), "biz_n": int(nb), "props_n": int(npr),
            "infl_week": round(float(iw)), "infl_all": round(float(ia)), "medals": _medals(db, rid),
@@ -495,6 +503,8 @@ def public(db, r, now: float, full: bool = False) -> dict:
         out["today"] = {"xp": int(dx.get("_", 0)), "cap": DAY_CAP}
         out["ach"] = [x["id"] for x in db.execute("SELECT id FROM ach WHERE rid = ? ORDER BY at DESC LIMIT 400", (rid,))]
         out["nick_w"], out["nick_n"] = int(r["nick_w"]), int(r["nick_n"])
+        import nicks
+        out["name"] = nicks.get(db, rid)                         # свой ник (есть — слово из списка не показывается)
     return out
 
 
@@ -523,9 +533,10 @@ def meta_of(store, rid: str) -> dict:
     ensure(store)
     with store.lock:
         r = row_of(store.db, rid)
+        nick = nick_of(r, store.db)
         import crews
         cr = crews.crew_of(store.db, rid)
-    return {"fid": r["fid"], "lvl": int(r["lvl"]), "nick": nick_of(r), "tag": cr["tag"] if cr else None,
+    return {"fid": r["fid"], "lvl": int(r["lvl"]), "nick": nick, "tag": cr["tag"] if cr else None,
             "ccol": cr["color"] if cr else None}
 
 
@@ -634,7 +645,7 @@ def board_of(store, board_id: str, scope: str, city: str, n: int = 50) -> dict:
                     continue
                 import crews
                 cr = crews.crew_of(db, rid)
-                out.append({"pos": i + 1, "fid": r["fid"], "nick": nick_of(r), "cre": r["creature"], "lvl": int(r["lvl"]),
+                out.append({"pos": i + 1, "fid": r["fid"], "nick": nick_of(r, db), "cre": r["creature"], "lvl": int(r["lvl"]),
                             "tag": cr["tag"] if cr else None, "ccol": cr["color"] if cr else None, "val": round(v)})
     return {"board": board_id, "scope": scope, "city": city, "rows": out, "total": len(rows), "week": week_of(now),
             "asc": board_id == "race" and scope == "week"}

@@ -7,8 +7,10 @@
  * в городе?» приходит не раньше ASK_AT с после старта — когда онлайн на связи, полоса уведомлений пуста, на экране нет
  * диалога, телефона, карты, паузы и человек остановился (или прошло ASK_LATE с). Карточка ничего не блокирует и сама
  * уходит через CARD_SEC. Тап — лист с полем: на телефоне он прижат к верху видимой области (visualViewport) — экранная
- * клавиатура его не закрывает; на компьютере Enter — сохранить, Esc — закрыть. «Потом», закрыть, не тронуть карточку —
- * отказ; после сохранения или ASK_MAX отказов больше не спрашиваем (localStorage «fc.nick.ask»).
+ * клавиатура его не закрывает; на компьютере Enter — сохранить, Esc — закрыть. Отказ — только «Потом» или закрыть лист;
+ * карточку не заметили (сама ушла за CARD_SEC) — не отказ: спросим снова через ASK_AGAIN с, до ASK_SHOWS раз за заход
+ * (25.11: «не вводил ник — и не спросило»). ASK_MAX отказов — молчим неделю (ASK_PAUSE), потом спросим снова; ник
+ * сохранён — больше не спрашиваем (localStorage «fc.nick.ask»).
  * Сменить потом: пауза и «Настройки» телефона («Ник: … · Изменить»), «Онлайн», «Рейтинг».
  *
  * Правду хранит сервер (server/nicks.py: проверка, фильтр, лимиты смен): ник уходит кадром {t:"nick"} по сокету онлайна,
@@ -23,7 +25,8 @@
   "use strict";
   var FC = global.FC;
   var MIN = 2, MAX = 20;
-  var ASK_AT = 12, ASK_LATE = 30, ASK_GIVEUP = 150, CARD_SEC = 20, ASK_MAX = 2;
+  var ASK_AT = 12, ASK_LATE = 30, ASK_GIVEUP = 150, CARD_SEC = 20, ASK_MAX = 2, ASK_AGAIN = 180, ASK_SHOWS = 3;
+  var ASK_PAUSE = 7 * 86400 * 1000;
   var K_NAME = "fc.nick", K_ASK = "fc.nick.ask";
   var ALLOWED = /^[A-Za-z0-9Ѐ-џҐґ _.-]+$/, LETTER = /[A-Za-zЀ-џҐґ]/;
 
@@ -190,7 +193,7 @@
     global.removeEventListener("keydown", onKey, true);
     if (input) input.blur();
     if (FC.input && prevInput && !FC.paused && !document.querySelector("#phone.on")) FC.input.enable(true);
-    if (refused && from === "ask" && !name) { ask.no = (ask.no | 0) + 1; saveAsk(); }
+    if (refused && from === "ask" && !name) refuse();
     from = null;
   }
   function submit() {
@@ -210,7 +213,15 @@
 
   /* ---- первый заход: карточка-приглашение -------------------------------------------------------------------------- */
   var card = null, cardT = 0;
-  function want() { return !name && !ask.done && (ask.no | 0) < ASK_MAX && !FC.gsOff(); }
+  function want() {
+    if (name || ask.done || FC.gsOff()) return false;
+    if ((ask.no | 0) >= ASK_MAX) {                         // дважды «Потом» — неделю молчим, потом спросим снова
+      if (Date.now() - (ask.at || 0) < ASK_PAUSE) return false;
+      ask.no = 0; saveAsk();
+    }
+    return true;
+  }
+  function refuse() { ask.no = (ask.no | 0) + 1; ask.at = Date.now(); saveAsk(); }
   function quiet() {
     if (!FC.started || FC.paused || document.hidden) return false;
     if (FC.input && FC.input.enabled === false) return false;              // диалог, телефон, карта, награда за вход…
@@ -234,28 +245,38 @@
       open("ask");
     });
     if (FC.audio) FC.audio.play("note");
-    cardT = setTimeout(function () { hideCard(true); }, CARD_SEC * 1000);
+    shows++;
+    cardT = setTimeout(function () { hideCard(false); later(); }, CARD_SEC * 1000);   // не заметил — не отказ, спросим позже
   }
   function hideCard(refused) {
     if (!card) return;
     clearTimeout(cardT);
     var el = card; card = null;
     el.classList.add("bye"); setTimeout(function () { el.remove(); }, 400);
-    if (refused) { ask.no = (ask.no | 0) + 1; saveAsk(); }
+    if (refused) refuse();
   }
-  FC.on("start", function () {
+  var shows = 0;
+  function later() { if (shows < ASK_SHOWS) setTimeout(function () { look(ASK_AGAIN - ASK_AT); }, ASK_AGAIN * 1000); }
+  FC.on("start", function () { look(0); });
+  function look(skip) {
     if (!want()) return;
-    var t0 = performance.now(), still = 0, lx = null, lz = null;
+    var t0 = performance.now() - skip * 1000, still = 0, lx = null, lz = null;
     (function tick() {
       if (!want() || card || (sheet && sheet.classList.contains("on"))) return;
       var t = (performance.now() - t0) / 1000;
-      if (t > ASK_GIVEUP) return;                            // тихой минуты так и не нашлось — спросим в следующий заход
+      if (t > ASK_GIVEUP) { shows++; later(); return; }      // тихой минуты так и не нашлось — попробуем позже
       var P = FC.player;
       if (P) { still = lx != null && Math.hypot(P.x - lx, P.z - lz) < 0.4 ? still + 0.5 : 0; lx = P.x; lz = P.z; }
-      if (t >= ASK_AT && FC.mp && FC.mp.connected && quiet() && (still >= 1.5 || t >= ASK_LATE)) { showCard(); return; }
+      // тихо (никаких сообщений и заданий) и стоит — сразу; через минуту — уже просто без диалога, телефона и паузы:
+      // розыск, сообщения и задание не должны откладывать вопрос навсегда
+      var ok = quiet() && (still >= 1.5 || t >= ASK_LATE) || t >= ASK_LATE * 2 && calm();
+      if (t >= ASK_AT && FC.mp && FC.mp.connected && ok) { showCard(); return; }
       setTimeout(tick, 500);
     })();
-  });
+  }
+  function calm() {
+    return FC.started && !FC.paused && !document.hidden && !(FC.input && FC.input.enabled === false) && !(FC.hud && FC.hud.inDialog && FC.hud.inDialog());
+  }
 
   /* ---- где сменить: пауза и «Настройки» телефона (fhud.js зовёт pause:open и phone:settings) ------------------- */
   function rowHtml() {

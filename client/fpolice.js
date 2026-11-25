@@ -205,7 +205,7 @@
   }
   function dispatch() {
     var P = FC.player;
-    W.units = W.units.filter(function (c) { return !c.dead && !c.wrecked && FC.cars.list.indexOf(c) >= 0; });
+    W.units = W.units.filter(function (c) { return !c.dead && !c.wrecked && FC.cars.list.indexOf(c) >= 0 && c.driver !== "player"; });
     // застрявшую далеко машину убираем — диспетчер пришлёт новую (игрок этого не видит: > 90 м)
     var t = now();
     W.units.slice().forEach(function (c) {
@@ -228,7 +228,7 @@
     if (W.stars >= 3 && !W.block && now() > W.blockT && P.mode === "car" && Math.hypot(P.vx, P.vz) > 8) makeBlock();
   }
   function release(car) {
-    if (!car || car.dead) return;
+    if (!car || car.dead || car.driver === "player") return;   // машину, в которой сидит игрок, патрулю не «отпускать»
     car.siren = false; car.keep = false;
     if (!FC.cars.toLane(car)) car.ai = { mode: "free", freeT: 0, lost: true };
     car.driver = "cop";
@@ -423,6 +423,10 @@
     if (had) { FC.emit("wanted", { stars: 0 }); if (!silent && FC.audio && FC.audio.loop) FC.audio.loop("siren", false); }
   }
   FC.on("busted", function () { clear(true); });
+  // Угнанная машина патруля — больше не машина патруля. Иначе при снятии розыска (перемещение с карты, розыск истёк)
+  // release() отдавал её автопилоту «копа»: машина уезжала без игрока, а он оставался «за рулём» на пустом месте —
+  // «переместился, себя не вижу» (24.11). Плюс из неё же высаживались пешие копы (deployFoot).
+  FC.on("car:enter", function (e) { var i = e && e.car ? W.units.indexOf(e.car) : -1; if (i >= 0) W.units.splice(i, 1); });
   FC.on("wasted", function () { clear(true); });
 
   /* ---- «Перекраска» и «Сдаться» ----------------------------------------------------------------------------------- */

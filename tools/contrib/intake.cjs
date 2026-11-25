@@ -6,6 +6,9 @@
  * проверить пути и слова, прогнать сторож содержания (из main — правка не может его ослабить), закоммитить от имени
  * автора-ника, открыть PR и запустить CI на ветке (PR от GITHUB_TOKEN сам CI не запускает — поэтому workflow_dispatch).
  * Не наложилась или сторож против — правка «отклонена» с понятной причиной: человек видит её на странице статуса.
+ * Потом — сверка уже открытых PR правок с сайта (GET /contrib/watch): влит → merged, его коммит уже в выпуске live
+ * (город обновился) → live, закрыт без слияния → closed с последним комментарием мейнтейнера как причиной. По этим
+ * статусам сервер шлёт письма тем, кто оставил почту (server/contribmail.py) — почты здесь нет и не бывает.
  *
  *   CONTRIB_API=https://city.ariflame.com/g CONTRIB_KEY=… GH_TOKEN=… node tools/contrib/intake.cjs
  *   node tools/contrib/intake.cjs --file item.json --dry      проверка на своей машине: наложить и прогнать сторож, без PR
@@ -86,7 +89,8 @@ function prBody(item, paths, guard) {
     "- [ ] Игра стала **лучше** и ничего не сломалось (правило «только лучше» — AGENTS.md): не медленнее на телефоне, ничего не пропало, баланс и деньги не ломаются",
     "- [ ] Снимки и превью в отчёте CI выглядят как надо (компьютер и телефон)",
     "- [ ] Правила содержания соблюдены (сторож: " + (guard.review.length ? guard.review.length + " на посмотреть" : "чисто") + ")",
-    "", "Влить — правка уедет в игру сама; закрыть с причиной — автор увидит её на странице правки.",
+    "", "Влить — правка уедет в игру сама, автор увидит это на странице правки (и получит письмо, если оставил почту). " +
+      "Закрыть — сначала комментарий с причиной: последний комментарий мейнтейнера автор увидит на странице правки и в письме.",
   ];
   return lines.filter((l) => l !== null).join("\n");
 }
@@ -147,15 +151,54 @@ async function one(item) {
   console.log("  PR:", url);
 }
 
-(async () => {
-  let items;
-  if (FILE) items = [JSON.parse(fs.readFileSync(FILE, "utf8"))];
-  else {
-    if (!KEY) { console.log("CONTRIB_KEY не задан — приём правок с сайта выключен"); return; }
-    items = (await api("GET", "/contrib/pending")).items || [];
+// ---- сверка открытых PR: влит → merged, в выпуске live → live, закрыт без слияния → closed ---------------------------
+const MAINT = ["OWNER", "MEMBER", "COLLABORATOR"];
+const REPO = process.env.GITHUB_REPOSITORY || "";
+const ghJson = (args) => JSON.parse(gh(args));
+
+// почему закрыли: последний комментарий мейнтейнера в PR (не бота), одной строкой и коротко — его увидит автор
+function closeReason(repo, num) {
+  try {
+    const cs = ghJson(["api", "repos/" + repo + "/issues/" + num + "/comments?per_page=100"]);
+    const m = (Array.isArray(cs) ? cs : []).filter((c) => c && c.user && c.user.type === "User" && MAINT.includes(c.author_association)).pop();
+    return m ? String(m.body || "").replace(/<!--[\s\S]*?-->/g, "").replace(/\s+/g, " ").trim().slice(0, 300) : "";
+  } catch (e) { return ""; }
+}
+
+// коммит слияния уже в том, на что указывает тег выпуска live (его ставит workflow «Выпуск», сервер забирает сам)
+function isLive(repo, sha) {
+  if (!/^[0-9a-f]{40}$/.test(String(sha || ""))) return false;
+  try {
+    const st = gh(["api", "repos/" + repo + "/compare/" + sha + "...live", "--jq", ".status"]);
+    return st === "ahead" || st === "identical";
+  } catch (e) { return false; }     // выпуск как раз пересоздаётся (тега нет) — проверим в следующий раз
+}
+
+async function watch() {
+  const items = (await api("GET", "/contrib/watch")).items || [];
+  console.log("правок с PR на сверке:", items.length);
+  for (const it of items) {
+    try {
+      // поля из очереди — как и у новых правок: номер и ссылку — строго по формату, PR — только из этого репо
+      const id = String(it.id || "");
+      const m = String(it.pr_url || "").match(/^https:\/\/github\.com\/([\w.-]+\/[\w.-]+)\/pull\/(\d+)$/);
+      if (!/^[A-Za-z0-9_-]{12}$/.test(id) || !m) { console.error("  непонятная запись — пропускаю"); continue; }
+      if (REPO && m[1].toLowerCase() !== REPO.toLowerCase()) { console.error("  правка", id, "— PR не из этого репо, пропускаю"); continue; }
+      const pr = ghJson(["api", "repos/" + m[1] + "/pulls/" + m[2]]);
+      if (pr.merged) {
+        // влили и уже выкатили между обходами — сразу live: одно письмо «в городе» вместо двух
+        if (isLive(m[1], pr.merge_commit_sha)) { console.log("правка", id, "— в городе"); await report(id, "live"); }
+        else if (it.status !== "merged") { console.log("правка", id, "— влита"); await report(id, "merged"); }
+      } else if (pr.state === "closed") {
+        console.log("правка", id, "— PR закрыт без слияния");
+        const why = closeReason(m[1], m[2]);   // нет комментария — без причины: письмо и страница скажут «загляни в PR»
+        await report(id, "closed", why ? { reason: why } : {});
+      }
+    } catch (e) { console.error("  сверка не вышла:", String(e.message).slice(0, 200)); }   // не страшно — через 15 минут снова
   }
-  console.log("новых правок:", items.length);
-  if (!items.length) return;
+}
+
+async function intake(items) {
   tryGit(["fetch", "-q", "origin", "main"]);
   WT = fs.mkdtempSync(path.join(os.tmpdir(), "contrib-wt-"));
   execFileSync("git", ["worktree", "add", "-q", "--detach", WT, "origin/main"], { cwd: ROOT, stdio: "inherit" });
@@ -172,4 +215,18 @@ async function one(item) {
     }
   }
   spawnSync("git", ["worktree", "remove", "--force", WT], { cwd: ROOT });
+  WT = ROOT;
+}
+
+(async () => {
+  let items;
+  if (FILE) items = [JSON.parse(fs.readFileSync(FILE, "utf8"))];
+  else {
+    if (!KEY) { console.log("CONTRIB_KEY не задан — приём правок с сайта выключен"); return; }
+    // сначала сверка открытых PR: она не трогает git и не должна зависеть от того, как пройдёт приём новых
+    try { await watch(); } catch (e) { console.error("сверка открытых PR не вышла:", String(e.message).slice(0, 200)); }
+    items = (await api("GET", "/contrib/pending")).items || [];
+  }
+  console.log("новых правок:", items.length);
+  if (items.length) await intake(items);
 })().catch((e) => { console.error(e); process.exit(1); });

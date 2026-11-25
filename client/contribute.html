@@ -158,11 +158,14 @@ footer{border-top:1px solid var(--line);padding:22px 0 40px;color:var(--muted);f
       <label>Что и зачем <small>как это изменит игру и как проверить</small>
         <textarea id="idea" maxlength="3000" placeholder="На бульваре Маяка мало мест посидеть. Добавил веранду со столиками и людьми — подойди к кафе у арки." required></textarea></label>
       <div class="two">
-        <label>Ник <small>будет в pull request</small><input type="text" id="author" maxlength="40" autocomplete="nickname"></label>
+        <label>Ник <small>необязательно; покажем среди строителей города и в pull request</small><input type="text" id="author" maxlength="40" autocomplete="nickname"></label>
         <label>Каким ИИ сделано
           <select id="tool"><option>ChatGPT</option><option>Claude</option><option>Gemini</option><option>DeepSeek</option><option>Другой ИИ</option><option>Сам, без ИИ</option></select></label>
       </div>
-      <label>Как с тобой связаться <small>необязательно; Telegram или почта — увидит только мейнтейнер</small>
+      <label>Почта <small>необязательно; напишем, когда правку примут, выкатят или отклонят. Никому не показываем, после ответа удаляем.</small>
+        <input type="text" id="email" maxlength="120" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="name@example.com" aria-describedby="emailErr">
+        <span class="err" id="emailErr" role="alert" hidden></span></label>
+      <label>Как с тобой связаться <small>необязательно; Telegram — если мейнтейнеру нужно что-то уточнить, увидит только он</small>
         <input type="text" id="contact" maxlength="80" autocomplete="off"></label>
       <label class="agree"><input type="checkbox" id="agree"><span>Правка делает игру лучше и соблюдает правила. Отдаю её
         проекту на условиях <a href="dev/src/LICENSE">лицензии</a> и <a href="dev/src/CLA.md">соглашения участника</a>.</span></label>
@@ -209,17 +212,33 @@ footer{border-top:1px solid var(--line);padding:22px 0 40px;color:var(--muted);f
   drop.addEventListener("keydown", function (e) { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); $("file").click(); } });
 
   var draft = store("fc.contrib.draft") || {};
-  ["title", "idea", "author", "contact", "tool"].forEach(function (k) { if (draft[k]) $(k).value = draft[k]; $(k).addEventListener("input", save); });
-  function save() { store("fc.contrib.draft", { title: $("title").value, idea: $("idea").value, author: $("author").value, contact: $("contact").value, tool: $("tool").value }); }
+  ["title", "idea", "author", "email", "contact", "tool"].forEach(function (k) { if (draft[k]) $(k).value = draft[k]; $(k).addEventListener("input", save); });
+  function save() { store("fc.contrib.draft", { title: $("title").value, idea: $("idea").value, author: $("author").value, email: $("email").value, contact: $("contact").value, tool: $("tool").value }); }
+
+  // почта — необязательна; проверка та же, что у сервера (server/contribmail.py): латиница, без пробелов и запятых
+  var EMAIL_RE = /^[a-z0-9_](?:[a-z0-9._+-]{0,62}[a-z0-9_-])?@(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+(?:[a-z]{2,24}|xn--[a-z0-9-]{1,59})$/;
+  function emailBad() {
+    var v = $("email").value.trim().toLowerCase();
+    return v && (v.length > 120 || v.indexOf("..") >= 0 || !EMAIL_RE.test(v)) ? "Проверь почту: нужен адрес вида name@example.com, латиницей. Или оставь поле пустым." : "";
+  }
+  function checkEmail() {
+    var why = emailBad();
+    $("emailErr").textContent = why; $("emailErr").hidden = !why;
+    if (why) $("email").setAttribute("aria-invalid", "true"); else $("email").removeAttribute("aria-invalid");
+    return !why;
+  }
+  $("email").addEventListener("blur", checkEmail);
+  $("email").addEventListener("input", function () { if (!$("emailErr").hidden) checkEmail(); });
 
   $("f").addEventListener("submit", function (e) {
     e.preventDefault();
-    var body = { title: $("title").value.trim(), idea: $("idea").value.trim(), author: $("author").value.trim(), contact: $("contact").value.trim(), tool: $("tool").value, agree: $("agree").checked };
+    var body = { title: $("title").value.trim(), idea: $("idea").value.trim(), author: $("author").value.trim(), email: $("email").value.trim().toLowerCase(), contact: $("contact").value.trim(), tool: $("tool").value, agree: $("agree").checked };
     var patch = $("patch").value.trim();
     if (picked) Object.assign(body, picked); else if (patch) body.patch = patch + "\n";
     var why = !picked && !patch ? "Прикрепи файл от ИИ или вставь текст правки." : body.title.length < 4 ? "Напиши, что это за правка (от 4 знаков)." :
-      body.idea.length < 10 ? "Напиши, что и зачем (от 10 знаков)." : !body.agree ? "Отметь согласие с правилами." : "";
+      body.idea.length < 10 ? "Напиши, что и зачем (от 10 знаков)." : !checkEmail() ? emailBad() : !body.agree ? "Отметь согласие с правилами." : "";
     $("err").textContent = why; if (why) return;
+    if (!body.email) delete body.email;
     $("go").disabled = true; $("go").textContent = "Отправляю…";
     fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) })
       .then(function (r) {
@@ -230,7 +249,8 @@ footer{border-top:1px solid var(--line);padding:22px 0 40px;color:var(--muted);f
         });
       })
       .then(function (j) {
-        var mine = store("fc.contrib.mine") || []; mine.unshift({ id: j.id, title: body.title, at: Date.now() }); store("fc.contrib.mine", mine.slice(0, 20));
+        // mail: 1 — письма будут, -1 — почту дали, но с неё сегодня уже много правок (письма по этой не будет)
+        var mine = store("fc.contrib.mine") || []; mine.unshift({ id: j.id, title: body.title, at: Date.now(), mail: j.notify ? 1 : body.email ? -1 : 0 }); store("fc.contrib.mine", mine.slice(0, 20));
         store("fc.contrib.draft", {}); $("f").reset(); picked = null; $("fileLbl").textContent = "Прикрепи файл от ИИ";
         location.hash = j.id; show(j.id); listMine();
       })
@@ -239,19 +259,28 @@ footer{border-top:1px solid var(--line);padding:22px 0 40px;color:var(--muted);f
   });
 
   // статус правки по ссылке #номер
-  var STEPS = [["pending", "Принята"], ["taken", "Проверяется"], ["pr", "Pull request"], ["merged", "В игре"]], poll = 0;
+  // pending/taken → pr → merged (влита) → live (в городе); отказ: rejected — на проверке робота, closed — PR закрыт без слияния
+  var STEPS = ["Принята", "Pull request", "Одобрена", "В городе"], AT = { pending: 0, taken: 0, pr: 1, merged: 2, live: 3 },
+    NO = { rejected: [1, "Отклонена"], closed: [2, "Не взяли"] }, poll = 0;
   function show(id) {
     var box = $("st"); box.hidden = false;
     fetch(API + "/" + encodeURIComponent(id)).then(function (r) { if (!r.ok) throw 0; return r.json(); }).then(function (d) {
-      var at = { pending: 0, taken: 1, pr: 2 }[d.status], no = d.status === "rejected";
-      var track = STEPS.map(function (s, i) { return "<span class='" + (no ? (i === 0 ? "done" : i === 1 ? "no" : "") : i < at ? "done" : i === at ? "now" : "") + "'>" + (no && i === 1 ? "Отклонена" : s[1]) + "</span>"; }).join("");
-      var what = no ? "<p><b>Почему:</b> " + esc(d.reason || "не прошла проверки") + "</p><p class='hint'>Покажи эту причину своему ИИ — он поправит, и отправь правку заново.</p>" :
-        d.status === "pr" ? "<p>Открыт pull request — мейнтейнер посмотрит, проверки уже идут. После слияния правка сама уедет в игру.</p>" +
-          (d.pr_url ? "<div class='row'><a class='btn' href='" + esc(d.pr_url) + "' target='_blank' rel='noopener'>Открыть pull request</a></div>" : "") :
+      var at = AT[d.status], no = NO[d.status];
+      var track = STEPS.map(function (s, i) { return "<span class='" + (no ? (i < no[0] ? "done" : i === no[0] ? "no" : "") : i < at ? "done" : i === at ? "now" : "") + "'>" + (no && i === no[0] ? no[1] : s) + "</span>"; }).join("");
+      var prBtn = d.pr_url ? "<div class='row'><a class='btn' href='" + esc(d.pr_url) + "' target='_blank' rel='noopener'>Открыть pull request</a></div>" : "";
+      var what = d.status === "rejected" ? "<p><b>Почему:</b> " + esc(d.reason || "не прошла проверки") + "</p><p class='hint'>Покажи эту причину своему ИИ — он поправит, и отправь правку заново.</p>" :
+        d.status === "closed" ? "<p>Мейнтейнер закрыл pull request без слияния." + (d.reason ? " <b>Почему:</b> " + esc(d.reason) : "") + "</p><p class='hint'>Можно доработать правку со своим ИИ и прислать снова.</p>" + prBtn :
+        d.status === "live" ? "<p><b>Правка в городе</b> — у всех, кто открывает игру. Спасибо, что строишь Флейм-Сити!</p><div class='row'><a class='btn hot' href='./'>Посмотреть в игре</a>" + (d.pr_url ? "<a class='btn' href='" + esc(d.pr_url) + "' target='_blank' rel='noopener'>Pull request</a>" : "") + "</div>" :
+        d.status === "merged" ? "<p>Правку приняли — через несколько минут она уедет в город у всех.</p>" + prBtn :
+        d.status === "pr" ? "<p>Открыт pull request — мейнтейнер посмотрит, проверки уже идут. После слияния правка сама уедет в игру.</p>" + prBtn :
         "<p>Правка в очереди. Раз в 15 минут робот накладывает её на свежую версию игры, проверяет и открывает pull request — эта страница обновится сама.</p>";
-      box.innerHTML = "<div class='status'><h3>" + esc(d.title) + "</h3><p class='hint'>Правка " + esc(d.id) + " · файлы: " + esc((d.files || []).join(", ")) + "</p><div class='track'>" + track + "</div>" + what +
+      var me = (store("fc.contrib.mine") || []).filter(function (m) { return m.id === d.id; })[0];
+      var mail = !me || !me.mail || d.status === "live" || d.status === "rejected" || d.status === "closed" ? "" :
+        me.mail > 0 ? "<p class='hint'>Напишем на почту, когда статус сменится.</p>" : "<p class='hint'>С этой почты сегодня уже много правок — письма по этой не будет, следи здесь.</p>";
+      box.innerHTML = "<div class='status'><h3>" + esc(d.title) + "</h3><p class='hint'>Правка " + esc(d.id) + " · файлы: " + esc((d.files || []).join(", ")) + "</p><div class='track'>" + track + "</div>" + what + mail +
         "<p class='hint'>Ссылка на эту правку: <a href='#" + esc(d.id) + "'>" + esc(location.origin + location.pathname + "#" + d.id) + "</a></p></div>";
-      clearTimeout(poll); if (d.status === "pending" || d.status === "taken") poll = setTimeout(function () { show(id); }, 30000);
+      // в очереди — проверяем часто; PR сверяется с GitHub раз в 15 минут — реже
+      clearTimeout(poll); if (AT[d.status] !== undefined && d.status !== "live") poll = setTimeout(function () { show(id); }, at === 0 ? 30000 : 120000);
     }).catch(function () { box.innerHTML = "<div class='status'><h3>Правка не найдена</h3><p class='hint'>Проверь ссылку.</p></div>"; });
   }
   function listMine() {

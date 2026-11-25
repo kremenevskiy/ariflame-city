@@ -880,9 +880,10 @@ REPORTS = os.environ.get("FC_REPORTS") or os.path.join(os.path.dirname(os.path.a
 app.include_router(fcerrors.make_router(db, fcmodes.admin_key, lambda: REPORTS))
 
 # Правки без GitHub (страница contribute.html и навык для ИИ): очередь — папка contrib/ рядом с базой (FC_CONTRIB — своя),
-# забирает её GitHub Actions по ключу FC_CONTRIB_KEY (contrib.py, .github/workflows/contrib-intake.yml).
+# забирает её GitHub Actions по ключу FC_CONTRIB_KEY (contrib.py, .github/workflows/contrib-intake.yml). Почта автора и
+# письма о статусе — в базе (contribmail.py, /g/admin/contrib/outbox), отправляет с хоста tools/deploy/city-mail.sh.
 CONTRIB_DIR = os.environ.get("FC_CONTRIB") or os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "contrib")
-app.include_router(contrib.make_router(lambda: CONTRIB_DIR))
+app.include_router(contrib.make_router(lambda: CONTRIB_DIR, db, fcmodes.admin_key))
 
 # Уровни, рейтинги, достижения, кланы, война за районы (22.11.2026): progress.py, crews.py, war.py. Уровень и тег клана —
 # в табличке над головой (Client.meta); сменились — сбрасываем «известность» у соседей, и tick пришлёт meta заново.

@@ -23,8 +23,9 @@ const EXTRA = process.env.QS || "";                   // доп. парамет�
 const SLOW = process.env.CI ? 2 : 1;
 
 const CASES = [
-  { name: "flame", qs: "?city=flame&q=mid" },
-  { name: "minsk", qs: "?city=minsk&q=mid&pick=0" },                // pick=0 — без экрана «Где начнёшь?» (FC.places)
+  // pick=0 — без экранов входа («Где начнёшь?» FC.places и «Как тебя зовут?» FC.nick.gate): сервера онлайна в проверке нет
+  { name: "flame", qs: "?city=flame&q=mid&pick=0" },
+  { name: "minsk", qs: "?city=minsk&q=mid&pick=0" },
 ];
 if (PHONE) CASES.push({ name: "phone-minsk", qs: "?city=minsk&q=low&pick=0", phone: true });
 

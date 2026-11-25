@@ -464,8 +464,10 @@
     beginQueued = true;
     // сначала кадр заставки с картинкой (floader.js afterPaint, ≤ 1,2 с), потом пакеты мест и выбор района («Где начнёшь?»,
     // FC.places — город строится сразу там), потом тяжёлая стройка города
-    // после выбора района — «Как тебя зовут?» (fnick.js gate: ника нет — спросит, есть — сразу дальше), потом город
-    function named(spot) { if (FC.nick && FC.nick.gate) FC.nick.gate(function () { begin(spot); }); else begin(spot); }
+    // после выбора района — «Как тебя зовут?» (fnick.js gate: ника нет — спросит, есть — сразу дальше), потом город;
+    // ?pick=0 и ?at= (проверки CI, ссылки «сразу в точку») — без экранов входа: ник спросит карточка в игре
+    var noEntry = /[?&](pick=0|at=)/.test(global.location.search);
+    function named(spot) { if (!noEntry && FC.nick && FC.nick.gate) FC.nick.gate(function () { begin(spot); }); else begin(spot); }
     function go() {
       var PL = FC.places;
       if (!PL) { named(); return; }

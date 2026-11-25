@@ -65,6 +65,7 @@
     var P = FC.player || {}, G = FC.gfx || {}, d = { v: 1, text: text || "" };
     d.ctx = FC.err && FC.err.ctx ? FC.err.ctx() : {};
     d.sid = FC.err ? FC.err.sid : "";
+    try { d.nick = { name: FC.nick && FC.nick.name() || "", ask: localStorage.getItem("fc.nick.ask") || "" }; } catch (e) { /* приватное окно */ }
     d.url = location.pathname + location.search.replace(/([?&](token|tgWebAppData|auth)[^&]*)/g, "");
     d.player = { x: r1(P.x), y: r1(P.y), z: r1(P.z), h: r1(P.heading != null ? P.heading : P.yaw), mode: P.mode || "", hp: P.hp, dead: !!P.dead,
       vy: r1(P.vy), swim: !!(P.swim || P.inWater) || undefined };

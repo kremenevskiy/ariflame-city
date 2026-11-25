@@ -555,7 +555,8 @@
     c.fillStyle = "#ffcf7a"; c.strokeStyle = "#1a1206"; c.lineWidth = 2.5;
     c.beginPath(); c.moveTo(0, -15); c.lineTo(11, 11); c.lineTo(0, 5); c.lineTo(-11, 11); c.closePath(); c.fill(); c.stroke();
     c.restore();
-    c.font = "800 13px system-ui"; c.lineWidth = 4; c.strokeStyle = "rgba(0,0,0,.8)"; c.strokeText("Ты", ps[0], ps[1] + 26); c.fillStyle = "#ffcf7a"; c.fillText("Ты", ps[0], ps[1] + 26);
+    c.font = "800 13px system-ui"; c.lineWidth = 4; c.strokeStyle = "rgba(0,0,0,.8)"; var me0 = FC.nick && FC.nick.name(), meL = me0 ? "Ты · " + me0 : "Ты";   // свой ник — как его видят другие
+    c.strokeText(meL, ps[0], ps[1] + 26); c.fillStyle = "#ffcf7a"; c.fillText(meL, ps[0], ps[1] + 26);
   }
   (function bindBig() {
     var drag = null, moved = 0, pinch = null;

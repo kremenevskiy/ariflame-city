@@ -464,13 +464,15 @@
     beginQueued = true;
     // сначала кадр заставки с картинкой (floader.js afterPaint, ≤ 1,2 с), потом пакеты мест и выбор района («Где начнёшь?»,
     // FC.places — город строится сразу там), потом тяжёлая стройка города
+    // после выбора района — «Как тебя зовут?» (fnick.js gate: ника нет — спросит, есть — сразу дальше), потом город
+    function named(spot) { if (FC.nick && FC.nick.gate) FC.nick.gate(function () { begin(spot); }); else begin(spot); }
     function go() {
       var PL = FC.places;
-      if (!PL) { begin(); return; }
+      if (!PL) { named(); return; }
       PL.ready(function () {
-        if (!PL.wantPick()) { begin(); return; }
+        if (!PL.wantPick()) { named(); return; }
         var S = FC.save, last = S.pos && !S.tutorial ? { name: FC.map.district ? FC.map.district(S.pos.x, S.pos.z).name : "" } : null;
-        PL.pickSpawn(function (spot) { begin(spot); }, last);
+        PL.pickSpawn(named, last);
       });
     }
     if (global.FCL && global.FCL.afterPaint) global.FCL.afterPaint(go); else go();

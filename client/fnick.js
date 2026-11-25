@@ -3,6 +3,10 @@
  * Задача: «при старте писать свой юзернейм… и потом его можно было изменить: заходишь, выбираешь локацию, спавнишься,
  * вводишь ник — чтобы тебя было видно другим, не «Гость». Чтобы работало и на телефоне, и на компьютере».
  *
+ * Главный путь (26.11.2026): шаг входа «Как тебя зовут?» сразу после «Где начнёшь?» — gate(), его зовёт fmain.js перед
+ * стройкой города: поле, 🎲 «придумать», «В город» и «Без ника» (спросим при следующем входе). Карточка ниже — запасной
+ * путь, когда выбора района не было (?pick=0, ?at=, город без районов).
+ *
  * Первые секунды остаются чистыми (пролёт, плашка района, сообщение Макса в полосе уведомлений): карточка «Как тебя зовут
  * в городе?» приходит не раньше ASK_AT с после старта — когда онлайн на связи, полоса уведомлений пуста, на экране нет
  * диалога, телефона, карты, паузы и человек остановился (или прошло ASK_LATE с). Карточка ничего не блокирует и сама
@@ -18,7 +22,7 @@
  * устройстве, вошедшему — перенос, если на сервере ника ещё нет); что записано на сервере — welcome.name. Без онлайна
  * ник пишется только на устройство и уйдёт на сервер при следующем входе (там его и проверят).
  *
- * FC.nick: {name(), open(), set(text) → Promise<{ok, nick | why}>, check(text) → {nick | why}, forHi()}
+ * FC.nick: {name(), open(), set(text) → Promise<{ok, nick | why}>, check(text) → {nick | why}, forHi(), gate(go)}
  * Шина: «nick» (имя) — ник сменился.
  */
 (function (global) {
@@ -75,7 +79,25 @@
     // телефон: лист у верхнего края видимой области — клавиатура снизу его не закрывает; на низком экране — без пояснения
     "body.touch .nk-box{top:calc(var(--nk-top,0px) + 8px + var(--safe-t));width:min(440px,calc(100vw - 16px - var(--safe-l) - var(--safe-r)));",
     "max-height:calc(var(--nk-h,100vh) - 16px - var(--safe-t))}",
-    ".nk-box.tight{gap:6px;padding:10px 12px}.nk-box.tight p{display:none}.nk-box.tight input{padding:7px 10px}"
+    ".nk-box.tight{gap:6px;padding:10px 12px}.nk-box.tight p{display:none}.nk-box.tight input{padding:7px 10px}",
+    // шаг входа «Как тебя зовут?» — сразу после «Где начнёшь?», в том же оформлении (поверх заставки, z выше выбора района)
+    "#nkgate{position:fixed;inset:0;z-index:31;display:flex;flex-direction:column;align-items:center;overflow-y:auto;",
+    "padding:calc(9vh + var(--safe-t,0px)) 20px calc(24px + var(--safe-b,0px));background:linear-gradient(180deg,rgba(9,13,34,.78),rgba(9,13,34,.94));",
+    "color:#fff;font-family:Oswald,'Arial Narrow',system-ui,sans-serif;animation:nk-in .3s ease both}@keyframes nk-in{from{opacity:0}}",
+    "#nkgate form{width:min(440px,100%);display:flex;flex-direction:column;gap:10px}",
+    "#nkgate h2{margin:0;font-weight:600;font-size:34px;letter-spacing:.01em;text-align:center}",
+    "#nkgate p.sub{margin:0 0 6px;font:500 15px/1.4 system-ui,sans-serif;color:rgba(255,243,223,.82);text-align:center}",
+    "#nkgate .nk-in{display:flex;gap:8px}",
+    "#nkgate input{flex:1;min-width:0;font:600 20px system-ui,sans-serif;padding:13px 14px;border-radius:12px;border:3px solid #fff;background:#0d56a3;",
+    "color:#fff;outline:none;-webkit-user-select:text;user-select:text;touch-action:manipulation}",
+    "#nkgate input::placeholder{color:rgba(255,255,255,.55)}#nkgate input:focus{box-shadow:0 0 0 3px #ffcf7a}",
+    "#nkgate button{border:0;border-radius:12px;font:600 18px Oswald,'Arial Narrow',system-ui,sans-serif;cursor:pointer;touch-action:manipulation}",
+    "#nkgate .nk-dice{width:54px;flex:none;background:#1d2440;color:#fff;font-size:24px;border:3px solid rgba(255,255,255,.35)}",
+    "#nkgate .nk-go{padding:13px;background:linear-gradient(90deg,#ffcf7a,#ff9b4a);color:#2a1205;font-size:21px}",
+    "#nkgate .nk-go:disabled{opacity:.6;cursor:default}",
+    "#nkgate .nk-skip{background:none;color:rgba(255,255,255,.7);font:500 14px system-ui,sans-serif;padding:8px;text-decoration:underline;text-underline-offset:3px}",
+    "#nkgate .nk-err{text-align:center;font:500 14px system-ui,sans-serif}",
+    "@media (max-height:520px){#nkgate{padding-top:calc(12px + var(--safe-t,0px))}#nkgate h2{font-size:26px}#nkgate p.sub{display:none}}"
   ].join(""));
 
   /* ---- применить ник: копия на устройстве, пауза, шина ------------------------------------------------------------- */
@@ -211,6 +233,80 @@
     });
   }
 
+  /* ---- вход: «Как тебя зовут?» сразу после «Где начнёшь?» (26.11.2026) ---------------------------------------------
+   * Карточка в игре (ниже) ждала тихую минуту и уходила сама: за сутки из 85 игроков ник не выбрал никто, владелец её
+   * не видел ни на телефоне, ни на компьютере. Теперь спрашиваем шагом входа — выбрал район, назвался, поехал в город
+   * (fmain.js зовёт gate перед стройкой города). «Без ника» — не отказ навсегда: спросим при следующем входе. Ник уже
+   * есть на сервере (вход в аккаунт с нового устройства) — шаг не показываем; ответ онлайна ждём не дольше WAIT_HI. */
+  var WAIT_HI = 1500, gated = false;
+  var A1 = ["Быстрый", "Рыжий", "Ночной", "Тихий", "Смелый", "Весёлый", "Хитрый", "Летучий", "Северный", "Ловкий", "Огненный", "Лесной"];
+  var A2 = ["Ёж", "Лис", "Кот", "Волк", "Енот", "Бобр", "Сокол", "Барсук", "Зубр", "Филин", "Стриж", "Тигр"];
+  function dice() { return A1[Math.random() * A1.length | 0] + " " + A2[Math.random() * A2.length | 0] + " " + (10 + Math.random() * 90 | 0); }
+  function gate(go) {
+    var done = false;
+    function finish() { if (done) return; done = true; go(); }
+    if (FC.gsOff()) { finish(); return; }
+    if (name) { finish(); return; }
+    var MP = FC.mp;
+    if (MP && !MP.connected) {                    // онлайн ещё не ответил: может, ник уже есть на сервере
+      var t = setTimeout(function () { off(); show(); }, WAIT_HI);
+      var off = FC.on("mp:on", function () { clearTimeout(t); off(); setTimeout(show, 0); });
+      return;
+    }
+    show();
+    function show() {
+      if (name) { finish(); return; }
+      gated = true;
+      var box = document.createElement("div");
+      box.id = "nkgate"; box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Как тебя зовут в городе?");
+      box.innerHTML = "<form novalidate><h2>Как тебя зовут?</h2>" +
+        "<p class='sub'>Ник увидят все в городе: над головой, на карте, в «Онлайне» и рейтингах. Сменить — в паузе.</p>" +
+        "<div class='nk-in'><input type='text' name='nick' maxlength='" + MAX + "' autocomplete='nickname' autocapitalize='words' " +
+        "autocorrect='off' spellcheck='false' enterkeyhint='go' placeholder='Твой ник' aria-label='Ник'>" +
+        "<button type='button' class='nk-dice' aria-label='Придумать ник' title='Придумать'>🎲</button></div>" +
+        "<div class='nk-err' aria-live='polite'></div>" +
+        "<button type='submit' class='nk-go'>В город</button><button type='button' class='nk-skip'>Без ника</button></form>";
+      document.body.appendChild(box);
+      var ld = document.getElementById("loader"); if (ld) ld.classList.add("picking");      // табличка заставки — под шагом не видна
+      var form = box.querySelector("form"), inp = box.querySelector("input"), err = box.querySelector(".nk-err"), btn = box.querySelector(".nk-go");
+      function bye() {
+        box.remove(); global.removeEventListener("keydown", stop, true); offNick();
+        if (ld) ld.classList.remove("picking");
+        finish();
+      }
+      // клавиши — только полю (WASD, M, Esc игры не срабатывают, пока пишешь)
+      function stop(e) { if (e.target === inp || box.contains(e.target)) e.stopPropagation(); }
+      global.addEventListener("keydown", stop, true);
+      // ник пришёл с сервера, пока шаг открыт (ответ онлайна опоздал) — уже назван
+      var offNick = FC.on("nick", function (n) { if (n && !btn.disabled) { bye(); } });
+      inp.addEventListener("input", function () {
+        var c = check(inp.value);
+        err.className = "nk-err"; err.textContent = inp.value.trim() && !c.nick ? c.why : "";
+      });
+      box.querySelector(".nk-dice").addEventListener("click", function () {
+        inp.value = dice(); err.className = "nk-err"; err.textContent = "";
+        try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); }
+      });
+      box.querySelector(".nk-skip").addEventListener("click", bye);
+      form.addEventListener("submit", function (e) {
+        e.preventDefault();
+        if (btn.disabled) return;
+        var c = check(inp.value);
+        if (!c.nick) { err.className = "nk-err"; err.textContent = inp.value.trim() ? c.why : "Напиши ник или нажми 🎲"; inp.focus(); return; }
+        btn.disabled = true; err.className = "nk-err ok"; err.textContent = "Сохраняю…";
+        set(c.nick).then(function (r) {
+          btn.disabled = false;
+          if (!r.ok) { err.className = "nk-err"; err.textContent = r.why || "Не получилось — попробуй другой"; inp.focus(); return; }
+          bye();
+          setTimeout(function () { if (FC.hud) FC.hud.toast("Теперь ты — " + r.nick, "ok", 3); }, 2500);
+        });
+      });
+      // фокус: на компьютере — сразу; на телефоне клавиатура откроется по тапу в поле (без жеста iOS её не покажет)
+      if (!FC.mobile) setTimeout(function () { try { inp.focus({ preventScroll: true }); } catch (e) { inp.focus(); } }, 60);
+      else try { inp.focus({ preventScroll: true }); } catch (e) { /* без жеста — по тапу */ }
+    }
+  }
+
   /* ---- первый заход: карточка-приглашение -------------------------------------------------------------------------- */
   var card = null, cardT = 0;
   function want() {
@@ -257,7 +353,7 @@
   }
   var shows = 0;
   function later() { if (shows < ASK_SHOWS) setTimeout(function () { look(ASK_AGAIN - ASK_AT); }, ASK_AGAIN * 1000); }
-  FC.on("start", function () { look(0); });
+  FC.on("start", function () { if (!gated) look(0); });        // спросили на входе — в этот заход карточкой не дёргаем
   function look(skip) {
     if (!want()) return;
     var t0 = performance.now() - skip * 1000, still = 0, lx = null, lz = null;
@@ -305,7 +401,7 @@
   FC.nick = {
     name: function () { return name; },
     open: function () { open("menu"); },
-    set: set, check: check,
+    set: set, check: check, gate: gate,
     forHi: function () { hiSent = name; return name; }      // fmp.js: копия с устройства в hi
   };
 })(window);

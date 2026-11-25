@@ -19,7 +19,8 @@
  * крыши-формы), вода; ближние куски — ещё надписи (вывески, таблички) и тень у стен. Деревья, фонари, опоры, остановки,
  * метро, светофоры — общие инстансы на город. Кольцо загрузки — по качеству графики; сборка куска — кусочками за кадр.
  *
- * FC.osm: {ready, root, collide(x, z, r), itemAt(x, z, pad), near(x, z, r) → контуры, water(x, z), chunksLoaded(),
+ * FC.osm: {ready, root, collide(x, z, r, y), itemAt(x, z, pad), near(x, z, r) → контуры, water(x, z), chunksLoaded(),
+ *   roofAt(x, z, yMax) — высота крыши под точкой (скаты как нарисованы; ходьба по крышам, fmain),
  *   mask(x, z, r), maskPoly(pts) — убрать дома OSM в маске (ориентиры рисует flandmarks.js), metro() → входы, debug}
  */
 (function (global) {
@@ -366,7 +367,7 @@
     return { x: a[0] + ux * t, z: a[1] + uz * t, ux: ux, uz: uz, nx: -uz, nz: ux, t: t, l: l };
   }
   function buildingM(b, J, p0) {
-    var p = p0 || pts(b[4]); if (p.length < 3) return;
+    var p = p0 || pts(b[4]); if (p.length < 3) return null;
     var fam = b[12], FP = famP(fam), h = b[1], mh = b[2], shape = b[9], seed = b[0] % 997, lv = Math.max(1, b[14] || 1);
     var wc = b[7] >= 0 ? b[7] : FP.w[(b[0] >> 3) % FP.w.length], wl = linOf(wc);
     var variant = (b[0] >> 5) % 8;
@@ -476,12 +477,16 @@
     }
     // тень у стен (AO): кольцо наружу 1,8 м, прозрачность 0,38 → 0
     if (h > 4 && mh < 1) J.ao.push(p);
+    if (!shape) return null;
+    var rf = roofInfo(shape, top, rh, o, p);
+    if (shape === -1) { rf.sl = slope; rf.rise = used; }
+    return rf;
   }
   // дом старого формата (без семейства) — как раньше
   function building(b, J, p0) {
-    if (b[12] >= 20) { buildingM(b, J, p0); return; }
+    if (b[12] >= 20) return buildingM(b, J, p0);
     var A = J.A, R = J.R;
-    var p = p0 || pts(b[4]); if (p.length < 3) return;
+    var p = p0 || pts(b[4]); if (p.length < 3) return null;
     var h = b[1], mh = b[2], shape = b[9], kind = b[3];
     var st = useTex && b[12] ? b[12] : b[11];
     var seed = b[0] % 997, tint = 0.85 + ((b[0] >> 3) % 23) / 100;
@@ -501,8 +506,15 @@
       }
     } else shape = 0;
     wallsOf(A, p, mh, top, fac, kol, null);
-    if (!shape) { capOf(A, p, top, fac, kol, false); if (mh > 2.5) capOf(A, p, mh, fac, kol, true); return; }
+    if (!shape) { capOf(A, p, top, fac, kol, false); if (mh > 2.5) capOf(A, p, mh, fac, kol, true); return null; }
     roof(R, p, o, shape, top, rh, b, roofColor(b, 0, shape));
+    return roofInfo(shape, top, rh, o, p);
+  }
+  /* Скат крыши для ходьбы по ней (roofAt): те же числа, что у roof(); плоская — null (высота = h). */
+  function roofInfo(shape, top, rh, o, p) {
+    var cc = centroid(p), hw = o ? o.W / 2 : 1, hl = o ? o.L / 2 : 1, r = o ? Math.max(1, Math.min(o.W, o.L) / 2 * 0.95) : 1;
+    return { s: shape, top: top, rh: rh, ox: o ? o.x : cc[0], oz: o ? o.z : cc[1], ux: o ? o.ux : 1, uz: o ? o.uz : 0, hw: hw, hl: hl,
+      ins: shape === 2 ? Math.min(hw, hl * 0.9) : 0, cx: cc[0], cz: cc[1], r: r, H: shape === 4 ? rh : Math.min(rh, r), sl: 0, rise: 0 };
   }
   function roof(R, p, o, shape, y0, rh, b, col) {
     var cc = centroid(p), y1 = y0 + rh, i, k;
@@ -652,7 +664,8 @@
     for (var gx = Math.floor(it.x0 / GRID); gx <= Math.floor(it.x1 / GRID); gx++)
       for (var gz = Math.floor(it.z0 / GRID); gz <= Math.floor(it.z1 / GRID); gz++) fn(gx + "," + gz);
   }
-  function gridAdd(it) { gfor(it, function (k) { (grid[k] || (grid[k] = [])).push(it); }); }
+  var gridV = 0;                                                // новая клетка сетки — сбросить кэш клетки roofAt
+  function gridAdd(it) { gfor(it, function (k) { var l = grid[k]; if (!l) { l = grid[k] = []; gridV++; } l.push(it); }); }
   function gridDel(it) { gfor(it, function (k) { var l = grid[k]; if (!l) return; var i = l.indexOf(it); if (i >= 0) l.splice(i, 1); }); }
 
   /* ---- сборка суперкуска: по шагам, не дольше ~7 мс за кадр ------------------------------------------------ */
@@ -675,9 +688,15 @@
       // Стена — только то, что нарисовано и стоит на земле (23.11: «на Маяке не пройти»). Контур дома с частями
       // (флаг 2 без 1: башни на подиуме, корпуса с проходами и дворами) не рисуется — он остаётся записью дома (адрес,
       // двери, владение), но не стеной; стенами становятся его нарисованные части от земли (флаг 1, низ ниже 2,5 м).
-      if (b[6] & 2 && b[2] < 2.5) J.items.push({ p: p0, x0: bb[0], z0: bb[1], x1: bb[2], z1: bb[3], h: b[1], mh: b[2], name: b[5], id: b[0], kind: b[3], pi: b[13], levels: b[14], st: b[11], fam: b[12], addr: b[17] || "", nocol: !(b[6] & 1) });
-      else if (b[6] === 1 && b[2] < 2.5) J.items.push({ p: p0, x0: bb[0], z0: bb[1], x1: bb[2], z1: bb[3], h: b[1], mh: b[2], id: b[0], colOnly: true });
-      if (b[6] & 1 && !(masks.length && masked(cx, cz))) building(b, J, p0);
+      var it = null;
+      if (b[6] & 2 && b[2] < 2.5) J.items.push(it = { p: p0, x0: bb[0], z0: bb[1], x1: bb[2], z1: bb[3], h: b[1], mh: b[2], name: b[5], id: b[0], kind: b[3], pi: b[13], levels: b[14], st: b[11], fam: b[12], addr: b[17] || "", nocol: !(b[6] & 1), top: b[1], rf: null });
+      else if (b[6] === 1 && b[2] < 2.5) J.items.push(it = { p: p0, x0: bb[0], z0: bb[1], x1: bb[2], z1: bb[3], h: b[1], mh: b[2], id: b[0], colOnly: true, top: b[1], rf: null });
+      // часть над землёй (башня на подиуме, консоль): по ней тоже ходят, а стеной она — только на своей высоте (up)
+      else if (b[6] & 1) J.items.push(it = { p: p0, x0: bb[0], z0: bb[1], x1: bb[2], z1: bb[3], h: b[1], mh: b[2], id: b[0], colOnly: true, up: true, top: b[1], rf: null });
+      if (b[6] & 1 && !(masks.length && masked(cx, cz))) {
+        var rf = building(b, J, p0);
+        if (rf && it) { it.rf = rf; it.top = rf.top; }        // скатная: стены до карниза, выше — скат (roofAt)
+      }
       if ((n & 15) === 15 && performance.now() - t0 > 4) { J.i++; break; }
     }
     if (J.i >= bs.length) { J.step = 1; J.i = 0; }
@@ -1193,11 +1212,15 @@
     return best;
   }
   var q2 = [0, 0];
-  function collide(x, z, r) {
+  // y — высота ног (пешеход): стена дома ниже ног (на крыше, над карнизом) не мешает, часть над землёй — только на своей высоте.
+  // Без y — как раньше: каждый контур от земли — стена на всю высоту.
+  var STEP = 0.5;
+  function collide(x, z, r, y) {
     var hit = false, nx = 0, nz = 0, list = nearAll(x, z, r + 1);
     for (var k = 0; k < list.length; k++) {
       var it = list[k];
       if (it.nocol) continue;
+      if (y == null ? it.up : (y >= it.top - STEP || (it.up && y + 1.8 <= it.mh))) continue;
       if (x < it.x0 - r || x > it.x1 + r || z < it.z0 - r || z > it.z1 + r) continue;
       var inside = pipP(x, z, it.p), best = edgeDist(it.p, x, z, q2);
       if (inside || best < r) {
@@ -1207,6 +1230,38 @@
       }
     }
     return { x: x, z: z, hit: hit, nx: nx, nz: nz };
+  }
+  /* Крыша под точкой: самая высокая поверхность дома не выше yMax (скат — как нарисован), нет — −1e9. Без выделений
+     памяти: клетка сетки кэшируется (кадр за кадром игрок в той же клетке), точка против контура — pipP. */
+  function surfY(it, x, z) {
+    var f = it.rf; if (!f) return it.h;
+    if (f.s === -1) return f.top + Math.min(edgeDist(it.p, x, z) * f.sl, f.rise);                   // скаты внутрь от края
+    if (f.s === 5) { var de = edgeDist(it.p, x, z); return f.top + f.rh * de / Math.max(0.01, de + Math.hypot(x - f.cx, z - f.cz)); }   // шатёр
+    if (f.s === 3 || f.s === 4) { var dd = Math.hypot(x - f.cx, z - f.cz); return dd >= f.r ? f.top : f.top + f.H * Math.sqrt(1 - dd * dd / (f.r * f.r)); }
+    var dx = x - f.ox, dz = z - f.oz, u = Math.abs(dx * f.ux + dz * f.uz), v = Math.abs(dz * f.ux - dx * f.uz);
+    var k = 1 - v / f.hw;                                                                           // двускатная: к коньку
+    if (f.ins > 0) k = Math.min(k, (f.hl - u) / f.ins);                                            // вальма: и с торцов
+    return f.top + f.rh * (k < 0 ? 0 : k > 1 ? 1 : k);
+  }
+  // кэш клеток: 4 последние (камера у стыка клеток ходит между ними — без новой строки-ключа на каждый вызов)
+  var rc = [{ gx: 1e9, gz: 0, v: -1, l: null }, { gx: 1e9, gz: 0, v: -1, l: null }, { gx: 1e9, gz: 0, v: -1, l: null }, { gx: 1e9, gz: 0, v: -1, l: null }], rcI = 0;
+  function cellAt(x, z) {
+    var gx = Math.floor(x / GRID), gz = Math.floor(z / GRID);
+    for (var i = 0; i < 4; i++) { var c = rc[i]; if (c.gx === gx && c.gz === gz && c.v === gridV) return c.l; }
+    var n = rc[rcI]; rcI = (rcI + 1) & 3;
+    n.gx = gx; n.gz = gz; n.v = gridV; n.l = grid[gx + "," + gz] || null;
+    return n.l;
+  }
+  function roofAt(x, z, yMax) {
+    var rList = cellAt(x, z), best = -1e9;
+    if (!rList) return best;
+    for (var i = 0; i < rList.length; i++) {
+      var it = rList[i];
+      if (it.nocol || it.h <= best || x < it.x0 || x > it.x1 || z < it.z0 || z > it.z1 || !pipP(x, z, it.p)) continue;
+      var y = surfY(it, x, z);
+      if (y <= yMax && y > best) best = y;
+    }
+    return best;
   }
   function itemAt(x, z, pad) {
     pad = pad || 0;
@@ -1286,7 +1341,7 @@
       Object.keys(signSrc).forEach(function (k) { var l = signSrc[k]; for (var i = 0; i < l.length; i++) if (Math.abs(l[i][0] - x) < r && Math.abs(l[i][2] - z) < r) out.push(l[i]); });
       return out;
     },
-    ready: true, meta: D, root: root, collide: collide, itemAt: itemAt, near: near, water: water, tierAt: tierAt, parkPick: parkPick,
+    ready: true, meta: D, root: root, collide: collide, roofAt: roofAt, itemAt: itemAt, near: near, water: water, tierAt: tierAt, parkPick: parkPick,
     chunksLoaded: function () { return Object.keys(loaded).length; },
     loadedKeys: function () { return Object.keys(loaded); },
     busy: function () { return !!job || queue.length > 0 || inflight > 0 || ready.length > 0; },

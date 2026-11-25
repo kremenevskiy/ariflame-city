@@ -1,8 +1,13 @@
-/* Флейм-Сити — вход и цикл: игрок пешком (ходьба, бег, прыжок, удар, столкновения), камера третьего лица
+/* Флейм-Сити — вход и цикл: игрок пешком (ходьба, бег, прыжок, удар, столкновения, крыши), камера третьего лица
  * (обзор мышью/пальцем, столкновение со зданиями, тряска, расширение поля зрения на скорости), двери зданий,
  * смерть и арест (респаун в больнице или участке), запуск всех систем по порядку.
  *
- * FC.player: {x, y, z, heading, mode: foot|car|inside, car, hp, ch (спрайт), busy, teleport(x, z), respawn(где)}
+ * Крыши: земля под ногами — самая высокая поверхность не выше ног + ступенька (FC.map.roofAt: крыша дома или улица);
+ * стена — только дом выше ног (FC.map.collide с opt.y). С улицы на крышу не зайти; с крыши шагнул за край — падаешь,
+ * с высоты больше 6 м — ушиб (P.damage). На крыше — «Сесть» в вертолёт рядом и люк «Спуститься» на верхний этаж.
+ *
+ * FC.player: {x, y, z, heading, mode: foot|car|inside, car, hp, ch (спрайт), busy, roof (на крыше или высоко над
+ *   улицей — уличные действия скрыты), teleport(x, z), respawn(где)}
  * FC.cam: {yaw, pitch, dist, shake(сила)} — машина (fcars) ставит mode="car" и двигает игрока сама.
  */
 (function (global) {
@@ -37,7 +42,7 @@
     if (Math.hypot(x - P.x, z - P.z) > 150) FC.fillUntil = performance.now() + 3000;
     if (FC.started && FC.osm && Math.hypot(x - P.x, z - P.z) > 150) { veil.classList.add("on"); veilT = 0; }
     var c = M.collide(x, z, 0.4);
-    P.x = c.x; P.z = c.z; P.vx = P.vz = 0; P.y = 0.2;
+    P.x = c.x; P.z = c.z; P.vx = P.vz = P.vy = 0; P.y = 0.2; fallFrom = null;   // перенос — не падение (без ушиба)
     if (heading != null) { P.heading = heading; cam.yaw = heading + Math.PI; }   // камера — за спиной (было «в лицо»)
     cam.snap = true;
   };
@@ -103,6 +108,11 @@
   FC.on("input:zoom", function (d) { cam.want = FC.clamp(cam.want + d * 1.2, 3.5, 16); });
   var camPos = new T.Vector3(), look = new T.Vector3(), tmp = new T.Vector3();
   function blocked(x, y, z) {
+    if (P.y > 2 && M.roofAt) {
+      // игрок наверху (крыша): мешают крыши как они есть — скаты, ступени башни, части дома ниже B.h; запас 0,4 м от стен
+      var r = Math.max(M.roofAt(x, z, 1e9), M.roofAt(x + 0.4, z, 1e9), M.roofAt(x - 0.4, z, 1e9), M.roofAt(x, z + 0.4, 1e9), M.roofAt(x, z - 0.4, 1e9));
+      return r > -1e8 && y < r + 0.8;
+    }
     var B = M.buildingAt(x, z, 0.4);
     return B && y < B.h + 1;
   }
@@ -199,6 +209,9 @@
      кувырок (V / Ctrl / ⤾ на тач) — 5 м за 0,4 с, неуязвимость, перезарядка 0,7 с. */
   var JOG = 5.6, SPRINT = 9.0, WALK_IN = 4.2;
   var coyote = 0, jumpBuf = 0, roll = 0, rollCd = 0, rollDir = { x: 0, z: 0 }, stepT = 0, airT = 0;
+  // крыши: ступенька (выше — стена), откуда падаем (высота последней опоры на улице или крыше; null — не считаем ушиб)
+  var STEP = 0.5, fallFrom = null, gRoof = false;
+  var colOpt = { prev: P, water: false, y: 0 };                    // один объект на кадр — без выделений памяти
   function updateFoot(dt) {
     if (P.dead) { P.vx = P.vz = 0; return; }
     var mx = I.mx, mz = I.mz;
@@ -207,7 +220,7 @@
     var m = Math.hypot(wx, wz);
     var inside = FC.inside && FC.inside.active;
     // вода (23.11: «в воде плавать»): заходишь — плывёшь по грудь в воде, медленнее, без прыжка и кувырка
-    var swim = !inside && M.water(P.x, P.z) && !M.onRoad(P.x, P.z);
+    var swim = !inside && P.y < 2 && M.water(P.x, P.z) && !M.onRoad(P.x, P.z);   // на крыше над водой — не плывёт
     if (swim !== !!P.swim) {
       P.swim = swim; if (P.ch) P.ch.swim = swim;
       if (FC.fx && FC.fx.burst) FC.fx.burst(P.x, 0.05, P.z, "water", swim ? 22 : 8);
@@ -247,8 +260,11 @@
       if (FC.audio) FC.audio.play("jump");
     }
     P.vy -= (P.vy > 0 && I.held("jump") ? 19 : 28) * dt;          // держишь — выше, отпустил — короче
+    if (P.vy < -45) P.vy = -45;                                     // предельная скорость падения (с крыши высотки)
+    var y0 = P.y;
     P.y += P.vy * dt;
-    var gy = groundY(P.x, P.z);
+    var gy = groundY(P.x, P.z, y0);                                 // по высоте до шага: крышу не «проскочить» за кадр
+    P.roof = !inside && (gRoof || P.y > gy + 2);
     if (!P.onGround) airT += dt;
     if (P.y <= gy) {
       if (!P.onGround && airT > 0.25) {                               // приземление: сплющиться, пыль, тряска
@@ -256,14 +272,19 @@
         if (FC.fx) FC.fx.burst(P.x, gy + 0.1, P.z, "dust", 10);
         cam.shake(Math.min(0.25, airT * 0.2));
         if (FC.fx) FC.fx.haptic("light");
+        fallHurt(gy, inside);
       }
       P.y = gy; P.vy = 0; P.onGround = true; airT = 0;
-    }
+    } else if (P.onGround && gRoof && P.vy <= 0 && P.y - gy < 0.4) { P.y = gy; P.vy = 0; }   // вниз по скату — не подпрыгивая
+    else if (P.onGround && P.y > gy + 1.5) P.onGround = false;       // шагнул с края крыши — падаешь (прыжок ещё 0,12 с)
+    if (P.onGround) fallFrom = inside ? null : gy;
     if (P.ch.land) P.ch.land = Math.max(0, P.ch.land - dt * 1.6);
     var nx = P.x + P.vx * dt, nz = P.z + P.vz * dt;
-    var col = inside ? FC.inside.collide(nx, nz, 0.35) : M.collide(nx, nz, 0.35, { prev: P, water: false });
+    colOpt.y = P.y;                                                  // стена — только дом выше ног (на крыше свой дом не держит)
+    var col = inside ? FC.inside.collide(nx, nz, 0.35) : M.collide(nx, nz, 0.35, colOpt);
     P.x = col.x; P.z = col.z;
-    if (FC.cars && FC.cars.pushOut) { var po = FC.cars.pushOut(P.x, P.z, 0.4); if (po) { P.x = po.x; P.z = po.z; } }
+    // машины выталкивают на улице; на крыше и в полёте над ними — нет (иначе столкнёт с края)
+    if (FC.cars && FC.cars.pushOut && P.y < 2.5) { var po = FC.cars.pushOut(P.x, P.z, 0.4); if (po) { P.x = po.x; P.z = po.z; } }
     // спринт: линии скорости, шире обзор (в updateCamera), пыль из-под ног
     var v = Math.hypot(P.vx, P.vz);
     if (FC.fx && v > JOG + 1 && !inside) FC.fx.speed((v - JOG) / (SPRINT - JOG) * 0.45);
@@ -277,14 +298,28 @@
     P.punchT -= dt;
     if (I.pressed("punch") && P.punchT <= 0) punch();
   }
-  function groundY(x, z) {
+  // y — высота ног (без неё — улица, как раньше): крыша под ногами не выше ног + ступенька; с улицы её не достать
+  function groundY(x, z, y) {
+    gRoof = false;
     if (FC.inside && FC.inside.active) return FC.inside.floorY();
+    if (y > 1 && M.roofAt) { var r = M.roofAt(x, z, y + STEP); if (r > 0.5) { gRoof = true; return r; } }
     if (M.onRoad(x, z)) return 0.04;
     if (M.water(x, z)) return -1.05;                               // плывёт: над водой голова и плечи
     var sf = FC.places && FC.places.surfaceAt ? FC.places.surfaceAt(x, z) : null;
     if (sf != null) return sf;                                     // мощение бульвара мест — 0,25 м
     if (z > M.BEACH_Z0 && z < M.SEA_LINE) return 0.06;
     return 0.16;
+  }
+  /* Ушиб от падения: считаем от опоры, с которой шагнул или прыгнул (улица/крыша), до места приземления. До 6 м
+     (два этажа) — без вреда, дальше — 5 за метр: с 9-этажки — половина здоровья, с высотки — больница. В воду — мягко;
+     кувырок в момент касания (неуязвимость) спасает. Внутри здания и после переноса — не считаем. */
+  function fallHurt(gy, inside) {
+    var drop = fallFrom == null || inside || gy < -0.5 ? 0 : fallFrom - gy;
+    if (drop < 6) return;
+    P.damage(Math.round((drop - 6) * 5), "fall");
+    cam.shake(Math.min(1, 0.35 + drop * 0.015));
+    if (FC.fx) FC.fx.haptic("heavy");
+    if (FC.audio) FC.audio.play("thud");
   }
   var punchN = 0;
   function punch() {
@@ -293,6 +328,7 @@
     if (FC.audio) FC.audio.play("whoosh");
     var fx = P.x + Math.sin(P.heading) * 1.1, fz = P.z + Math.cos(P.heading) * 1.1;
     var t = FC.people.near(fx, fz, 1.3);
+    if (t && Math.abs((t.y || 0) - P.y) > 2.5) t = null;                   // на крыше — прохожий внизу не достаётся
     if (t && t.kind !== "remote") P.heading = Math.atan2(t.x - P.x, t.z - P.z);     // доводка на цель: кулак в нос, а не мимо
     // человеком (fhumans): прямой и джеб по очереди, быстрее клипа — удар в игре мгновенный
     if (FC.humans) FC.humans.play(P.ch, punchN++ % 2 ? "jab" : "punch", { rate: 1.8, prio: 2 });
@@ -320,6 +356,60 @@
       });
     });
     return out;
+  });
+
+  /* ---- крыша: вертолёт рядом — «Сесть»; люк над главным входом (кольцо) — «Спуститься» на верхний этаж, как раньше
+     давал выход из вертолёта на крыше. Одно действие за раз и только у люка: тап по экрану на телефоне — тоже «✋». */
+  var roofIt = { id: "roof_air", x: 0, z: 0, r: 5.5, room: "roof", key: "car", label: "", act: null };
+  var roofAir = null, hatch = { B: null, x: 0, z: 0, y: 0 };
+  function roofBoard() { if (roofAir && !roofAir.wrecked && FC.air) FC.air.enter(roofAir); }
+  function roofDown() {
+    var B = hatch.B; if (!B || !FC.inside || !FC.inside.enter) return;
+    var top = Math.max(0, (B.floors || 1) - 1);
+    if (top) {                                                       // лифтом наверх, когда интерьер откроется (как fair.js goTop)
+      var off = FC.on("inside:enter", function (e) {
+        if (!e || e.building !== B) return;
+        off();
+        var tries = 0, again = function () {
+          if (!FC.inside.active || FC.inside.building !== B || FC.inside.floor === top || tries++ > 8) return;
+          FC.inside.go(top); setTimeout(again, 900);
+        };
+        setTimeout(again, 80);
+      });
+      setTimeout(off, 15000);
+    }
+    FC.inside.enter(B, 0);
+  }
+  function setHatch(B) {
+    if (hatch.B === B) return;
+    hatch.B = null;
+    if (FC.markers) FC.markers.remove("roof_hatch");
+    if (!B || !B.doors || !B.doors.length || !FC.inside) return;
+    var d = B.doors[0], x = d.x - d.nx * 3.4, z = d.z - d.nz * 3.4, y = M.roofAt(x, z, P.y + STEP);   // над входом, 2,5 м от стены
+    if (!(y > P.y - 1.5)) { x = B.x; z = B.z; y = M.roofAt(x, z, P.y + STEP); }
+    if (!(y > P.y - 1.5)) return;
+    hatch.B = B; hatch.x = x; hatch.z = z; hatch.y = y;
+    if (FC.markers) FC.markers.add({ id: "roof_hatch", x: x, z: z, y: y, color: "#ffcf7a", ring: 1.1, beam: false, blip: false });
+  }
+  FC.interact.provider(function (px, pz, room) {
+    if (room !== "roof" || P.mode !== "foot" || P.dead) { if (hatch.B) setHatch(null); return null; }
+    if (!P.onGround) return null;
+    var L = FC.air ? FC.air.list : [], A = null, bd = 5.5 * 5.5;
+    for (var i = 0; i < L.length; i++) {
+      var a = L[i], d = FC.dist2(a.x, a.z, px, pz);
+      if (a.ai || a.wrecked || a.player || a.kind !== "heli" || Math.abs(a.y - P.y) > 2.5 || d >= bd) continue;
+      bd = d; A = a;
+    }
+    setHatch(M.buildingAt(px, pz, 0));
+    if (A) {
+      roofAir = A; roofIt.id = "roof_air"; roofIt.x = A.x; roofIt.z = A.z; roofIt.r = 5.5; roofIt.key = "car"; roofIt.act = roofBoard;
+      roofIt.label = (A.spec.police ? "Угнать " : "Сесть: ") + A.spec.name;
+      return [roofIt];
+    }
+    if (!hatch.B) return null;
+    roofIt.id = "roof_down"; roofIt.x = hatch.x; roofIt.z = hatch.z; roofIt.r = 2; roofIt.key = "use"; roofIt.act = roofDown;
+    roofIt.label = "🚪 Спуститься на " + Math.max(1, hatch.B.floors || 1) + "-й этаж";
+    return [roofIt];
   });
 
   /* ---- вход: профиль, сохранение, старт --------------------------------------------------------------------- */
@@ -394,7 +484,8 @@
       if (P.mode === "foot") updateFoot(dt);
       var ch = P.ch;
       ch.x = P.x; ch.z = P.z; ch.y = P.y; ch.vx = P.vx; ch.vz = P.vz;
-      ch.speed = Math.hypot(P.vx, P.vz); ch.ground = groundY(P.x, P.z);
+      if (P.mode !== "foot") { P.roof = false; fallFrom = null; }   // за штурвалом, в машине, под куполом — не падение пешком
+      ch.speed = Math.hypot(P.vx, P.vz); ch.ground = groundY(P.x, P.z, P.y);   // тень — на крыше, если она под ногами
       ch.air = P.mode === "foot" && !P.onGround && P.y > ch.ground + 0.35;     // человек в прыжке — поза полёта
       ch.visible = P.mode !== "car";
       ch.room = FC.inside && FC.inside.active ? FC.inside.building.id : null;

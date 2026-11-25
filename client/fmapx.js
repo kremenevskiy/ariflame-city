@@ -559,24 +559,32 @@
     if (!FC.osm) return null;
     return recordOf(FC.osm.itemAt(x, z, pad || 0));
   }
+  /* Крыша под точкой не выше yMax (−1e9 — нет): дома OSM со скатами (fosm) и перенесённая Башня Флейм. */
+  function roofAt(x, z, yMax) {
+    var y = FC.osm && FC.osm.roofAt ? FC.osm.roofAt(x, z, yMax) : -1e9;
+    if (HQ.moved && HQ.h <= yMax && HQ.h > y && Math.abs(x - HQ.x) <= 18 && Math.abs(z - HQ.z) <= 18) y = HQ.h;
+    return y;
+  }
   function near(x, z, r) {
     var out = [];
     if (FC.osm) FC.osm.near(x, z, r).forEach(function (it) { var B = recordOf(it); if (B && out.indexOf(B) < 0) out.push(B); });
     return propsNear(x, z, r, out);
   }
-  /* Круг (x, z, r) против домов (контуры), столбов, воды и края города. */
+  /* Круг (x, z, r) против домов (контуры), столбов, воды и края города. opt.y — высота ног пешехода: дома ниже ног
+     (стоит на крыше) не стена, столбы и деревья выше 3 м не мешают (fosm.collide). */
   function collide(x, z, r, opt) {
-    var c = FC.osm ? FC.osm.collide(x, z, r) : { x: x, z: z, hit: false, nx: 0, nz: 0 };
+    var y = opt && opt.y != null ? opt.y : null;
+    var c = FC.osm ? FC.osm.collide(x, z, r, y) : { x: x, z: z, hit: false, nx: 0, nz: 0 };
     x = c.x; z = c.z;
     var hit = c.hit, nx = c.nx, nz = c.nz;
-    if (HQ.moved && x > HQ.x - 19 - r && x < HQ.x + 19 + r && z > HQ.z - 19 - r && z < HQ.z + 19 + r) {
+    if (HQ.moved && !(y != null && y >= HQ.h - 0.5) && x > HQ.x - 19 - r && x < HQ.x + 19 + r && z > HQ.z - 19 - r && z < HQ.z + 19 + r) {
       // перенесённая Башня Флейм — квадрат 36×36: выталкиваем к ближней грани
       var dx0 = x - (HQ.x - 18 - r), dx1 = (HQ.x + 18 + r) - x, dz0 = z - (HQ.z - 18 - r), dz1 = (HQ.z + 18 + r) - z, m = Math.min(dx0, dx1, dz0, dz1);
       if (m === dx0) { x = HQ.x - 18 - r; nx = -1; nz = 0; } else if (m === dx1) { x = HQ.x + 18 + r; nx = 1; nz = 0; }
       else if (m === dz0) { z = HQ.z - 18 - r; nx = 0; nz = -1; } else { z = HQ.z + 18 + r; nx = 0; nz = 1; }
       hit = true;
     }
-    if (!(opt && opt.noProps)) {
+    if (!(opt && opt.noProps) && !(y > 3)) {
       var pl = propsNear(x, z, r + 1, []);
       for (var i = 0; i < pl.length; i++) {
         var o = pl[i], dx = x - o.x, dz = z - o.z, d = Math.hypot(dx, dz), m = r + o.r;
@@ -802,7 +810,7 @@
     districts: DISTRICTS, places: PLACES, DIST: DIST, zones: ZONE_B, pois: POIS, homes: HOMES, hq: HQ, plaza: plaza, props: PROPS,
     start: { x: SX, z: SZ }, airfield: D.airfield, metro: D.metro, marks: D.marks, quiet: quiet, gov: gov,
     district: district, water: water, riverD: riverD, field: field, onRoad: onRoad, blockAt: blockAt, buildingAt: buildingAt,
-    collide: collide, near: near, addProp: addProp, removeProp: removeProp, other: other, lanePoint: lanePoint, axisPoint: axisPoint,
+    collide: collide, roofAt: roofAt, near: near, addProp: addProp, removeProp: removeProp, other: other, lanePoint: lanePoint, axisPoint: axisPoint,
     nearestNode: nearestNode, nearestLane: nearestLane, nearestEdge: nearestEdge, edgesNear: edgesNear, roadRoute: roadRoute,
     walkRoute: walkRoute, sidewalkPoint: sidewalkPoint, walkBlock: walkBlock, polyAt: polyAt, recordOf: recordOf, signal: signal,
     poi: function (kind, x, z) {

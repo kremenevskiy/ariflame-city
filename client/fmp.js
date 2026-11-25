@@ -239,7 +239,7 @@
       else if (m.t === "leave") { dropRemote(m.id); delete metas[m.id]; }
       else if (m.t === "emo") showEmo(m.id, m.k);
       else if (m.t === "online") setOnline(m.n);
-      else if (m.t === "race" || m.t === "room" || m.t === "coop" || m.t === "crew" || m.t === "prog" || m.t === "nick") FC.emit("mp:" + m.t, m);
+      else if (m.t === "race" || m.t === "room" || m.t === "coop" || m.t === "crew" || m.t === "prog" || m.t === "nick" || m.t === "upd") FC.emit("mp:" + m.t, m);   // upd — новая версия города (fupdate.js)
       else if ((m.t === "who" || m.t === "friends" || m.t === "locate") && m.q && pend[m.q]) { pend[m.q](m); delete pend[m.q]; }
       else if (m.t === "friend") onFriend(m);
       else if (m.t === "welcome") {

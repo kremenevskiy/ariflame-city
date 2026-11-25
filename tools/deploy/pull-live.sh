@@ -10,7 +10,8 @@
 #   CT       контейнер Incus игрового сервера   (пусто — сервер не трогаем; на ea-01 — city)
 #
 # Статика: сверяет sha256, раскладывает в новую папку и атомарно переключает ссылку — сайт не бывает «наполовину
-# выложен». Сервер (если в выпуске есть server-<sha>.tgz и задан CT): код меняется, только если он правда другой
+# выложен». Потом всем в онлайне — «новая правка, перезагрузка через ANN с» (/g/admin/announce, по умолчанию 10 с);
+# сервер перезапускается за 2 с до конца отсчёта. Сервер (если в выпуске есть server-<sha>.tgz и задан CT): код меняется, только если он правда другой
 # (сумма файлов); requirements.txt поменялся — pip в venv; рестарт fcg и проверка /g/health; не поднялся — откат на
 # прежний код. Распаковка безопасная (аудит 24.11): без владельцев и прав из архива, ссылки и не-файлы выкидываются.
 set -eu
@@ -43,8 +44,32 @@ unpack() {  # unpack <архив> <папка> — без владельцев/�
   find "$2" ! -type f ! -type d -exec rm -f {} +
 }
 
+# «Новая правка, перезагрузка через N с» всем в онлайне (client/fupdate.js) — через игровой сервер; ключ админки читает
+# сам контейнер, наружу он не выходит. Нет сервера или ключа — молча: игроки узнают по version.txt за 2 минуты.
+ANN=${ANN:-10}
+announce() {  # announce <true|false — перезапустится ли сервер>
+  [ -n "$CT" ] && command -v incus >/dev/null || return 0
+  incus exec "$CT" -- sh -c 'k=$(cat /var/lib/fcg/admin.key 2>/dev/null) || exit 0; curl -fsS -m 5 -o /dev/null -X POST \
+    -H "X-Admin-Key: $k" -H "Content-Type: application/json" -d "$1" http://127.0.0.1:8091/g/admin/announce' \
+    sh "{\"v\":\"$sha\",\"in\":$ANN,\"server\":$1}" >/dev/null 2>&1 || true
+}
+
+# ---- сервер: поменяется ли код (решаем до выкладки статики — чтобы объявить один раз) ---------------------------------
+srv_new=false
+if [ -n "$CT" ] && [ -n "$srv" ] && command -v incus >/dev/null; then
+  fetch "$srv"
+  unpack "$tmp/$srv" "$tmp/srv"
+  # только то, что нужно серверу: *.py, requirements.txt, tracks.json — и только плоско
+  [ -f "$tmp/srv/requirements.txt" ] && ls "$tmp/srv"/*.py >/dev/null 2>&1 || { echo "city: в $srv нет кода сервера" >&2; exit 1; }
+  want=$(cd "$tmp/srv" && cat requirements.txt tracks.json *.py 2>/dev/null | sha256sum | cut -c1-16)
+  have=$(incus exec "$CT" -- cat /opt/fcg/code.sum 2>/dev/null || true)
+  if [ "$want" != "$have" ]; then srv_new=true; fi
+fi
+
 # ---- статика -------------------------------------------------------------------------------------------------------
+static_new=false
 if [ "$(readlink "$DEST" 2>/dev/null || true)" != "$ROOT/$sha" ]; then
+  static_new=true
   fetch "$name"
   mkdir -p "$ROOT"
   new="$ROOT/$sha.new"
@@ -59,16 +84,12 @@ if [ "$(readlink "$DEST" 2>/dev/null || true)" != "$ROOT/$sha" ]; then
   echo "city: статика $sha на сайте"
 fi
 
+# объявление: статика уже на месте — игроки перезагрузятся в новую; сервер перезапустим, когда отсчёт почти дошёл
+if $static_new || $srv_new; then announce "$srv_new"; fi
+
 # ---- игровой сервер (контейнер CT) ----------------------------------------------------------------------------------
-[ -n "$CT" ] && [ -n "$srv" ] || exit 0
-command -v incus >/dev/null || { echo "city: нет incus — сервер не обновляю" >&2; exit 0; }
-fetch "$srv"
-unpack "$tmp/$srv" "$tmp/srv"
-# только то, что нужно серверу: *.py, requirements.txt, tracks.json — и только плоско
-[ -f "$tmp/srv/requirements.txt" ] && ls "$tmp/srv"/*.py >/dev/null 2>&1 || { echo "city: в $srv нет кода сервера" >&2; exit 1; }
-want=$(cd "$tmp/srv" && cat requirements.txt tracks.json *.py 2>/dev/null | sha256sum | cut -c1-16)
-have=$(incus exec "$CT" -- cat /opt/fcg/code.sum 2>/dev/null || true)
-[ "$want" = "$have" ] && exit 0
+$srv_new || exit 0
+sleep $((ANN > 2 ? ANN - 2 : 0))
 
 incus exec "$CT" -- rm -rf /tmp/fcg-new
 incus exec "$CT" -- mkdir -p /tmp/fcg-new/app

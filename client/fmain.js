@@ -359,7 +359,7 @@
     if (sa) {
       cam.pitch = 0.14; cam.want = cam.dist = narrow ? 10 : 8.5;
       startIntro();
-      if (FC.hud.areaCard) setTimeout(function () { FC.hud.areaCard(sa.name, (FC.places.districts.filter(function (d) { return d.id === sa.id; })[0] || {}).about); }, 1600);
+      if (FC.hud.areaCard) setTimeout(function () { FC.hud.areaCard(sa.name, sa.about || (FC.places.districts.filter(function (d) { return d.id === sa.id; })[0] || {}).about); }, 1600);
     }
     if (!FC.mobile) FC.hud.help("<b>WASD</b> — идти · клик и мышь — смотреть", 8);
     else FC.hud.help("Левый палец — идти · правый — смотреть", 7);

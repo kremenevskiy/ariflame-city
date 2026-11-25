@@ -320,6 +320,7 @@
     leg.querySelectorAll(".lgo[data-x]").forEach(function (b) { b.addEventListener("click", function (e) { e.stopPropagation(); teleport(+b.dataset.x, +b.dataset.z, true); }); });
     var more = leg.querySelector(".lmore");
     if (more) more.addEventListener("click", function (e) { e.stopPropagation(); var on = leg.classList.toggle("all"); more.textContent = on ? "⚡ Районы ▴" : "⚡ Районы ▾"; });
+    FC.emit("map:open", { legend: leg });                          // свои кнопки в строку мест (fcrowd: «👥 К игрокам»)
     if (FC.mp && FC.mp.online) FC.mp.online().then(function (list) {
       var box = leg.querySelector(".lpl"); if (!box || !list || !list.length) return;
       box.innerHTML = list.slice(0, 12).map(function (p) {

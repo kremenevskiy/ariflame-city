@@ -855,6 +855,10 @@ app.include_router(fcerrors.make_router(db, fcmodes.admin_key))
 # забирает её GitHub Actions по ключу FC_CONTRIB_KEY (contrib.py, .github/workflows/contrib-intake.yml).
 CONTRIB_DIR = os.environ.get("FC_CONTRIB") or os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "contrib")
 app.include_router(contrib.make_router(lambda: CONTRIB_DIR))
+# «Рядом с игроками» (crowd.py, 25.11.2026): GET /g/crowd — центр самой людной кучки города на клетке «who» (20 м) и
+# сколько в ней; без номеров и ников. Клиент — client/fcrowd.js: карточка старта и «👥 К игрокам» на карте.
+import crowd  # noqa: E402
+app.include_router(crowd.make_router(lambda: clients, tuple(CITY_LIM)))
 
 # Уровни, рейтинги, достижения, кланы, война за районы (22.11.2026): progress.py, crews.py, war.py. Уровень и тег клана —
 # в табличке над головой (Client.meta); сменились — сбрасываем «известность» у соседей, и tick пришлёт meta заново.

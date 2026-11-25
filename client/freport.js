@@ -126,7 +126,7 @@
     wasEnabled = !FC.input || FC.input.enabled !== false;
     if (FC.input) { FC.input.enable(false); if (FC.input.unlock) FC.input.unlock(); }
     back = document.createElement("div"); back.className = "rp-back";
-    var MODE = { foot: "пешком", car: "в машине", air: "в воздухе", para: "парашют", inside: "в здании" };
+    var MODE = { foot: "пешком", car: "в машине", ride: "пассажиром", air: "в воздухе", para: "парашют", inside: "в здании" };
     var p = data.player, where = (data.place && data.place.district ? data.place.district + " · " : "") + "x " + p.x + ", z " + p.z + " · " + (MODE[p.mode] || p.mode || "—");
     back.innerHTML = "<div class='rp' role='dialog' aria-modal='true' aria-labelledby='rp-h'><h3 id='rp-h'>Сообщить о проблеме</h3>" +
       "<p>Что случилось? Можно пусто — мы получим место, где ты стоишь, снимок экрана и журнал игры. Без аккаунта и переписки.</p>" +

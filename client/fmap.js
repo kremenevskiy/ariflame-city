@@ -425,19 +425,54 @@
     }
     return out;
   }
-  /* Круг (x, z, r) против зданий, столбов, воды и края: возвращает исправленную точку и признак удара. */
+  /* Крыши (ходьба по ним — fmain): башня ступенями (fbuild: стекло выше 90 м, обе стороны шире 22 м) — подиум до 0,18 h,
+     ствол с отступом 3 м до 0,8 h, верхушка с отступом 6 м; остальные — плоская крыша на h. */
+  var STEP = 0.5;                                    // ступенька: стена ниже ног + STEP не держит (на крыше), выше — стена
+  function setback(B) { return B.style === "glass" && B.h > 90 && B.w > 22 && B.d > 22; }
+  function roofY(B, x, z) {
+    if (!setback(B)) return B.h;
+    var e = Math.min(B.w / 2 - Math.abs(x - B.x), B.d / 2 - Math.abs(z - B.z));
+    return e < 3 ? B.h * 0.18 : e < 6 ? B.h * 0.8 : B.h;
+  }
+  // отступ стены, что ещё выше ног y (−1 — ниже ног: не стена)
+  function wallInset(B, y) {
+    if (y >= B.h - STEP) return -1;
+    if (!setback(B)) return 0;
+    return y < B.h * 0.18 - STEP ? 0 : y < B.h * 0.8 - STEP ? 3 : 6;
+  }
+  /* Крыша под точкой не выше yMax (−1e9 — нет). Без выделений памяти: 4 последние клетки сетки кэшируются (дома
+     Флейм-Сити не меняются; столб, добавленный позже в пустую клетку, крыше не важен). */
+  var rc = [{ gx: 1e9, gz: 0, l: null }, { gx: 1e9, gz: 0, l: null }, { gx: 1e9, gz: 0, l: null }, { gx: 1e9, gz: 0, l: null }], rcI = 0;
+  function roofAt(x, z, yMax) {
+    var gx = Math.floor(x / CELL), gz = Math.floor(z / CELL), best = -1e9, rList = null, i;
+    for (i = 0; i < 4; i++) if (rc[i].gx === gx && rc[i].gz === gz) { rList = rc[i].l; break; }
+    if (i === 4) { var n = rc[rcI]; rcI = (rcI + 1) & 3; n.gx = gx; n.gz = gz; rList = n.l = GRID[cellKey(gx, gz)] || null; }
+    if (!rList) return best;
+    for (i = 0; i < rList.length; i++) {
+      var o = rList[i];
+      if (o.prop || o.h <= best || Math.abs(x - o.x) > o.w / 2 || Math.abs(z - o.z) > o.d / 2) continue;
+      var y = roofY(o, x, z);
+      if (y <= yMax && y > best) best = y;
+    }
+    return best;
+  }
+  /* Круг (x, z, r) против зданий, столбов, воды и края: возвращает исправленную точку и признак удара.
+     opt.y — высота ног пешехода: здание ниже ног (стоит на крыше) не стена, у башни ступенями — стена своего яруса;
+     столбы и деревья выше 3 м не мешают. Без y — как раньше: каждое здание — стена на всю высоту. */
   function collide(x, z, r, opt) {
-    var hit = false, nx = 0, nz = 0;
+    var hit = false, nx = 0, nz = 0, y = opt && opt.y != null ? opt.y : null;
     var list = near(x, z, r + 2);
     for (var i = 0; i < list.length; i++) {
       var o = list[i];
       if (o.prop) {
-        if (opt && opt.noProps) continue;
+        if ((opt && opt.noProps) || y > 3) continue;
         var dx = x - o.x, dz = z - o.z, d = Math.hypot(dx, dz), m = r + o.r;
         if (d < m && d > 1e-4) { x = o.x + dx / d * m; z = o.z + dz / d * m; hit = true; nx = dx / d; nz = dz / d; }
         continue;
       }
-      var hw = o.w / 2, hd = o.d / 2;
+      var ins = y == null ? 0 : wallInset(o, y);
+      if (ins < 0) continue;
+      var hw = o.w / 2 - ins, hd = o.d / 2 - ins;
       var qx = FC.clamp(x, o.x - hw, o.x + hw), qz = FC.clamp(z, o.z - hd, o.z + hd);
       var ex = x - qx, ez = z - qz, e = Math.hypot(ex, ez);
       if (e < r) {
@@ -564,7 +599,7 @@
     XS: XS, ZS: ZS, VROADS: VROADS, HROADS: HROADS, nodes: NODES, edges: EDGES, blocks: BLOCKS, buildings: BUILDINGS,
     districts: DISTRICTS, DIST: DIST, zones: ZONE_B, pois: POIS, homes: HOMES, hq: HQ, plaza: plaza, props: PROPS,
     district: district, water: water, riverD: riverD, field: field, onRoad: onRoad, blockAt: blockAt, buildingAt: buildingAt,
-    collide: collide, near: near, addProp: addProp, other: other, lanePoint: lanePoint, nearestNode: nearestNode,
+    collide: collide, roofAt: roofAt, near: near, addProp: addProp, other: other, lanePoint: lanePoint, nearestNode: nearestNode,
     nearestLane: nearestLane, roadRoute: roadRoute, walkRoute: walkRoute, sidewalkPoint: sidewalkPoint,
     poi: function (kind, x, z) {
       var l = POIS.filter(function (B) { return B.poi === kind; });

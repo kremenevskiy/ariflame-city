@@ -652,7 +652,8 @@
   var pickT = 0, miniT = 1, miniDt = 0, lastMoneyT = "", lastClockT = "", lastHpW = -1, lastPromptH = "", ptimeEl = null;
   function pickInteraction() {
     var P = FC.player; if (!P || P.busy) return null;
-    var room = FC.inside && FC.inside.active ? FC.inside.building.id : null;
+    // на крыше (fmain: P.roof) — своё «место» "roof": двери, машины и люди внизу на улице отсюда недоступны
+    var room = FC.inside && FC.inside.active ? FC.inside.building.id : P.roof && P.mode === "foot" ? "roof" : null;
     var list = fixed.slice();
     providers.forEach(function (fn) { var r = fn(P.x, P.z, room); if (r) list = list.concat(r); });
     var best = null, bd = 1e18;

@@ -457,15 +457,20 @@
     });
     setTimeout(off, 15000);
   }
+  /* На крыше — стоишь на ней рядом с вертолётом и ходишь (fmain: крыша — земля, M.roofAt). Задача владельца 25.11:
+     «приземлился на крышу — сразу в здание провалился». Вниз, на верхний этаж, — люк «Спуститься» (fmain). */
   function roofExit(A, B) {
     leave(A, null);
-    var P = FC.player, d = B.doors[0];
-    if (FC.inside && FC.inside.enter) {
-      P.x = d.x + d.nx * 1.5; P.z = d.z + d.nz * 1.5; P.y = 0.2;
-      goTop(B);
-      FC.inside.enter(B, 0);
-      if (FC.hud) FC.hud.toast("С крыши — на " + Math.max(1, B.floors || 1) + "-й этаж", "", 2);
-    } else P.teleport(d.x + d.nx * 2.5, d.z + d.nz * 2.5);
+    var P = FC.player, sx = Math.sin(A.yaw), sz = Math.cos(A.yaw), top = A.y + 0.6, at = null;
+    // справа (как на земле), слева, сзади, спереди — первое место на той же крыше и без стены дома выше
+    var dirs = [[sz, -sx, 3.5], [-sz, sx, 3.5], [-sx, -sz, 4.5], [sx, sz, 4.5]];
+    for (var i = 0; i < dirs.length && !at && M.roofAt; i++) {
+      var x = A.x + dirs[i][0] * dirs[i][2], z = A.z + dirs[i][1] * dirs[i][2], y = M.roofAt(x, z, top);
+      if (y > A.y - 1.5 && !M.collide(x, z, 0.4, { y: y, noProps: true, water: false }).hit) at = { x: x, z: z, y: y };
+    }
+    if (!at) { var y0 = M.roofAt ? M.roofAt(A.x, A.z, top) : -1e9; at = { x: A.x, z: A.z, y: y0 > -1e8 ? y0 : A.y }; }
+    P.x = at.x; P.z = at.z; P.y = at.y; P.vx = P.vz = P.vy = 0; P.onGround = true;
+    if (FC.hud) FC.hud.toast("🏙 Ты на крыше — гуляй!", "", 2.5);
   }
   function bail(A) {
     var P = FC.player;

@@ -523,7 +523,8 @@
       deployFoot();
       // задержание
       var psp = Math.hypot(P.vx, P.vz), close = false, grabbing = false;
-      for (var i = 0; i < W.foot.length; i++) { var f = W.foot[i]; if (!(f.knocked > 0) && dist(f, P) < 1.6) { grabbing = true; close = true; } }
+      // по высоте тоже: игрок на крыше у края — не в руках у патруля на тротуаре внизу (fmain: крыши)
+      for (var i = 0; i < W.foot.length; i++) { var f = W.foot[i]; if (!(f.knocked > 0) && dist(f, P) < 1.6 && Math.abs((f.y || 0) - (P.y || 0)) < 2.5) { grabbing = true; close = true; } }
       W.units.forEach(function (c) { if (dist(c, P) < 10) close = true; });
       var limit = P.mode === "car" ? 1.4 : 1;
       if (!P.dead && close && psp < limit && (P.mode === "car" || grabbing) && W.seenT < 2 && !W.hollow) {

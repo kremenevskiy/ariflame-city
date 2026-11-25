@@ -18,6 +18,7 @@
  * Режимы (fmodes.js, 22.11 v2): кадры race/room/coop уходят через MP.send, ответы сервера — событиями шины
  * «mp:race», «mp:room», «mp:coop»; сервер с режимами пишет в welcome modes: 1. Сохранение, которое сервер счёл
  * нечестным (прирост денег быстрее возможного), он не принимает и отдаёт последнее честное — его и берём.
+ * Кататься вместе (fride.js, 25.11): кадры ride — событием «mp:ride»; r.s — текущий кадр интерполяции чужого игрока.
  */
 (function (global) {
   "use strict";
@@ -183,6 +184,7 @@
       var r = MP.remotes[id];
       if (now - r.seen > 3000) { dropRemote(id); return; }       // сервер перестал присылать — ушёл из радиуса
       var s = sample(r, t); if (!s || !r.ch) return;
+      r.s = s;                                                   // кадр интерполяции — fride.js сажает пассажиров по нему
       var ch = r.ch, px = ch.x, pz = ch.z;
       ch.x = s.x; ch.z = s.z; ch.y = s.y;
       ch.vx = (s.x - px) / Math.max(dt, 1e-3); ch.vz = (s.z - pz) / Math.max(dt, 1e-3);
@@ -239,7 +241,7 @@
       else if (m.t === "leave") { dropRemote(m.id); delete metas[m.id]; }
       else if (m.t === "emo") showEmo(m.id, m.k);
       else if (m.t === "online") setOnline(m.n);
-      else if (m.t === "race" || m.t === "room" || m.t === "coop" || m.t === "crew" || m.t === "prog" || m.t === "nick" || m.t === "upd") FC.emit("mp:" + m.t, m);   // upd — новая версия города (fupdate.js)
+      else if (m.t === "race" || m.t === "room" || m.t === "coop" || m.t === "crew" || m.t === "prog" || m.t === "nick" || m.t === "ride" || m.t === "upd") FC.emit("mp:" + m.t, m);   // upd — новая версия города (fupdate.js)
       else if ((m.t === "who" || m.t === "friends" || m.t === "locate") && m.q && pend[m.q]) { pend[m.q](m); delete pend[m.q]; }
       else if (m.t === "friend") onFriend(m);
       else if (m.t === "welcome") {
@@ -417,8 +419,10 @@
     if (m === 3 && P.air && /^[a-z0-9_]{1,12}$/.test(P.air.type || "")) msg.c = P.air.type;
     if (inside) msg.b = typeof inside.id === "number" ? inside.id : 500000 + FC.hash(String(inside.id)) % 499999;   // дом Минска «o…» → число
     var sig = JSON.stringify(msg);
-    if (sig === lastSig && now - lastSend < KEEP_MS) return;
+    // водитель с пассажирами (fride.js) — ровно 10 Гц и время кадра ts: пассажиры сглаживают езду по нему, без дрожи
+    if (sig === lastSig && now - lastSend < (MP.rideStamp ? SEND_MS : KEEP_MS)) return;
     lastSig = sig; lastSend = now;
+    if (MP.rideStamp) { msg.ts = Math.round(now) % 1e9; sig = JSON.stringify(msg); }
     ws.send(sig);
   }
 

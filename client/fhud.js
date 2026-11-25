@@ -369,13 +369,14 @@
       (B && B.doors ? "<button type='button' data-a='enter'>🚪 К двери: " + esc(B.name) + "</button>" : ""));
     sheet.style.left = Math.min(sx, bm.clientWidth - 230) + "px"; sheet.style.top = Math.min(sy, bm.clientHeight - 170) + "px";
     bm.appendChild(sheet);
-    sheet.addEventListener("click", function (e) {
+    var own = sheet;                                             // перемещение закрывает карту (closeMap) и уже убирает лист
+    own.addEventListener("click", function (e) {
       var a = e.target.dataset && e.target.dataset.a; if (!a) return;
       e.stopPropagation();
       if (a === "route") { addMarker({ id: "wp", x: wx, z: wz, color: "#c86bff", icon: "📍", route: true, ring: 0 }); toast("Маршрут проложен", "ok", 2); drawBig(); }
       else if (a === "go") teleport(wx, wz, true);
       else if (a === "enter") { var d = B.doors[0]; teleport(d.x + d.nx * 2.5, d.z + d.nz * 2.5, true); }
-      sheet.remove(); sheet = null;
+      own.remove(); if (sheet === own) sheet = null;
     });
   }
   function canTravel() {

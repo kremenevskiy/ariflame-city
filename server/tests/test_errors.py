@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import base64
 import importlib.util
 import os
 import tempfile
@@ -127,3 +128,34 @@ def test_recent_ring_trimmed(monkeypatch):
     with st.lock:
         n = st.db.execute("SELECT count(*) FROM err_recent").fetchone()[0]
     assert n <= 6
+
+
+JPG = base64.b64encode(b"\xff\xd8\xff\xe0" + b"\x00" * 200).decode()
+
+
+def test_problem_report_roundtrip(tmp_path, monkeypatch):
+    """«Сообщить о проблеме»: код R-XXXX, текст, данные и снимок — только админке; лимит на сеанс."""
+    errors._rep_hits.clear()
+    errors._rep_all.clear()
+    monkeypatch.setattr(fcg, "REPORTS", str(tmp_path / "rep"))
+    data = {"text": "не могу пройти между домами", "player": {"x": 4519.2, "z": -3251.4, "mode": "foot"},
+            "place": {"district": "Маяк Минска", "city": "minsk"}, "ctx": {"v": "abc1234"}, "log": [[1.2, "warn", "x"]]}
+    with TestClient(fcg.app) as tc:
+        r = tc.post("/g/report", json={"sid": "rep0000001", "data": data, "shot": JPG})
+        assert r.status_code == 200, r.text
+        code = r.json()["code"]
+        assert code.startswith("R-") and len(code) == 6
+        assert tc.get("/g/admin/reports").status_code == 404
+        lst = tc.get("/g/admin/reports", headers=ADMIN).json()["items"]
+        assert lst[0]["code"] == code and lst[0]["where"] == [4519.2, -3251.4] and lst[0]["district"] == "Маяк Минска"
+        one = tc.get(f"/g/admin/reports/{code}", headers=ADMIN).json()
+        assert one["text"] == data["text"] and one["data"]["log"] == data["log"] and one["shot"] is True
+        img = tc.get(f"/g/admin/reports/{code}.jpg", headers=ADMIN)
+        assert img.status_code == 200 and img.headers["content-type"] == "image/jpeg" and img.content[:3] == b"\xff\xd8\xff"
+        assert tc.get(f"/g/admin/reports/{code}.jpg").status_code == 404
+        # не JPEG, кривой sid, слишком большой снимок — отказ
+        assert tc.post("/g/report", json={"sid": "rep0000001", "data": data, "shot": base64.b64encode(b"<svg>").decode()}).status_code == 400
+        assert tc.post("/g/report", json={"sid": "../x", "data": data}).status_code == 400
+        assert tc.post("/g/report", json={"sid": "rep0000002", "data": data, "shot": "A" * (errors.REPORT_SHOT + 4)}).status_code == 413
+        codes = [tc.post("/g/report", json={"sid": "rep0000003", "data": data}).status_code for _ in range(errors.REPORT_SID_N + 1)]
+        assert codes[-1] == 429 and codes[0] == 200

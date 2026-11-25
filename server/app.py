@@ -54,6 +54,7 @@ import media  # noqa: E402 — кадры фоторежима (/g/photo, /g/p/<
 import events as fcevents  # noqa: E402 — календарь недели (/g/events)
 import contrib  # noqa: E402 — правки без GitHub (/g/contrib → contrib-intake.yml открывает PR)
 import errors as fcerrors  # noqa: E402 — ошибки у игроков и сервера (/g/err, /g/admin/errors)
+import stats as fcstats  # noqa: E402 — город в цифрах (/g/stats)
 import traceback  # noqa: E402
 import nicks  # noqa: E402 — ник игрока: проверка, хранение, лимиты смен
 
@@ -600,7 +601,8 @@ app.include_router(MODES.router())
 async def limit_body(request: Request, call_next):
     n = request.headers.get("content-length")
     path = request.url.path    # кадр фоторежима — до 1,5 МБ, правка с сайта (contrib.py) — до 1,4 МБ
-    cap = media.PHOTO_MAX + 4096 if path == "/g/photo" else contrib.BODY_MAX if path == "/g/contrib" else SAVE_MAX + 8192
+    cap = media.PHOTO_MAX + 4096 if path == "/g/photo" else contrib.BODY_MAX if path == "/g/contrib" else \
+        fcerrors.REPORT_MAX if path == "/g/report" else SAVE_MAX + 8192
     if n and n.isdigit() and int(n) > cap:
         return Response('{"detail":"слишком большой запрос"}', status_code=413, media_type="application/json")
     try:
@@ -667,6 +669,7 @@ async def ws_endpoint(ws: WebSocket):
     try:
         c.sess = await asyncio.to_thread(db().session_start, rid, guest)
         c.set_name(await asyncio.to_thread(_nick_hi, rid, hi.get("nick")))
+        await asyncio.to_thread(fcstats.on_join, db(), rid, guest, len(clients))   # «город в цифрах» (stats.py)
         if not guest:
             await asyncio.to_thread(db().touch, rid, cre)
             await _fill_meta(c)
@@ -750,8 +753,32 @@ def health():
 
 @app.get("/g/stats")
 def stats(resp: Response):
+    """Город в цифрах (stats.py) — страница статуса и «Сделать правку». Прежние поля online/peak/players_total — те же."""
     resp.headers["Cache-Control"] = "public, max-age=10"
-    return {"online": len(clients), "peak": peak, "players_total": db().total()}
+    cities: dict[str, int] = {}
+    for c in list(clients.values()):
+        cities[c.city] = cities.get(c.city, 0) + 1
+    return fcstats.snapshot(db(), len(clients), cities, peak)
+
+
+_VER_RE = re.compile(r"[0-9a-f]{7,40}")
+
+
+@app.post("/g/admin/announce")
+async def announce(request: Request):
+    """Новая версия города (tools/deploy/pull-live.sh): всем в онлайне — «новая правка, перезагрузка через N с»
+    (client/fupdate.js). server=true — следом перезапустится и игровой сервер. Ключ — X-Admin-Key, без него 404."""
+    key, got = fcmodes.admin_key(), request.headers.get("x-admin-key") or ""
+    if not key or not secrets.compare_digest(got, key):
+        raise HTTPException(404, "Not Found")
+    body = await _body(request)
+    v = str(body.get("v") or "")
+    if not _VER_RE.fullmatch(v):
+        raise HTTPException(400, "v — sha выпуска")
+    sec = body.get("in") if isinstance(body.get("in"), int) else 10
+    msg = {"t": "upd", "v": v, "in": max(3, min(sec, 60)), "server": bool(body.get("server"))}
+    sent = await asyncio.gather(*(send(c, msg) for c in list(clients.values())))   # медленный не держит остальных
+    return {"sent": sum(1 for x in sent if x)}
 
 
 @app.get("/g/top")
@@ -849,7 +876,8 @@ PHOTOS = os.environ.get("FC_PHOTOS") or os.path.join(os.path.dirname(os.path.abs
 app.include_router(media.make_router(verify, lambda: PHOTOS))
 app.include_router(fcevents.router())
 # Ошибки у игроков (client/ferr.js) и необработанные исключения сервера — сводка по отпечаткам в той же базе (errors.py)
-app.include_router(fcerrors.make_router(db, fcmodes.admin_key))
+REPORTS = os.environ.get("FC_REPORTS") or os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "reports")
+app.include_router(fcerrors.make_router(db, fcmodes.admin_key, lambda: REPORTS))
 
 # Правки без GitHub (страница contribute.html и навык для ИИ): очередь — папка contrib/ рядом с базой (FC_CONTRIB — своя),
 # забирает её GitHub Actions по ключу FC_CONTRIB_KEY (contrib.py, .github/workflows/contrib-intake.yml).

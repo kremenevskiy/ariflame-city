@@ -14,11 +14,14 @@
  * Контекст — версия, город, качество графики, телефон/компьютер/Telegram, браузер, экран, видеокарта, режим игрока,
  * позиция с шагом 50 м. Никаких аккаунтов, ников и токенов. Одинаковое — один раз (дальше только счётчик),
  * не больше 40 разных за сеанс, отправка пачкой раз в 8 с и при уходе со страницы. Онлайн выключен (?gs=off) — молчим.
- * Модулям: FC.err.report(вид, сообщение, данные) — для своих проверок.
+ * Модулям: FC.err.report(вид, сообщение, данные) — для своих проверок; FC.err.ctx() / log() / fps() — для «Сообщить о
+ * проблеме» (freport.js): журнал (последние 60 строк консоли) уходит только оттуда, по кнопке игрока.
  */
 (function (global) {
   "use strict";
-  var T0 = Date.now(), Q = [], SEEN = {}, SENT = 0, MAX = 40, gpu = null;
+  var T0 = Date.now(), Q = [], SEEN = {}, SENT = 0, MAX = 40, gpu = null, LOG = [], fpsNow = 0;
+  // журнал игры — последние 60 строк консоли и отчётов; уходит только с «Сообщить о проблеме» (freport.js)
+  function logLine(lvl, msg) { LOG.push([Math.round((Date.now() - T0) / 100) / 10, lvl, String(msg).slice(0, 200)]); if (LOG.length > 60) LOG.shift(); }
   var SID = (function () { var s = "", a = "abcdefghijklmnopqrstuvwxyz0123456789"; for (var i = 0; i < 12; i++) s += a[Math.floor(Math.random() * a.length)]; return s; })();
   var UA = (function (u) {
     var b = /YaBrowser\/\d+/.exec(u) || /Edg\/\d+/.exec(u) || /OPR\/\d+/.exec(u) || /Firefox\/\d+/.exec(u) || /CriOS\/\d+/.exec(u) || /Chrome\/\d+/.exec(u) || /Version\/[\d.]+.*Safari/.exec(u);
@@ -60,6 +63,7 @@
     if (extra && extra.line) it.line = extra.line | 0;
     SEEN[key] = { item: it, more: 0 };
     Q.push(it);
+    logLine("!" + kind, msg);
   }
   function url() {
     var F = FC();
@@ -95,17 +99,22 @@
     var r = e.reason;
     report("promise", (r && (r.message || r.name)) || String(r), r && r.stack);
   });
-  var ce = global.console && global.console.error;
-  if (ce) {
-    global.console.error = function () {
-      try {
-        var a = Array.prototype.slice.call(arguments), st = "";
-        var msg = a.map(function (x) { if (x && x.stack) { st = x.stack; return x.message || String(x); } return typeof x === "string" ? x : (function () { try { return JSON.stringify(x); } catch (e) { return String(x); } })(); }).join(" ");
-        report("console", msg, st);
-      } catch (e) { /* сам отчёт не должен ломать вывод */ }
-      return ce.apply(this, arguments);
-    };
+  function line(args) {
+    var st = "";
+    var msg = Array.prototype.map.call(args, function (x) { if (x && x.stack) { st = x.stack; return x.message || String(x); } return typeof x === "string" ? x : (function () { try { return JSON.stringify(x); } catch (e) { return String(x); } })(); }).join(" ");
+    return [msg, st];
   }
+  var C = global.console;
+  if (C) ["error", "warn", "log", "info"].forEach(function (lvl) {
+    var orig = C[lvl]; if (!orig) return;
+    C[lvl] = function () {
+      try {
+        var l = line(arguments);
+        if (lvl === "error") report("console", l[0], l[1]); else logLine(lvl, l[0]);   // error — сразу нам; прочее — в журнал
+      } catch (e) { /* сам отчёт не должен ломать вывод */ }
+      return orig.apply(this, arguments);
+    };
+  });
 
   // ---- зависания: таймер раз в секунду; разрыв > 5 с при видимой вкладке — страница висела. Сборка города при старте
   // законно держит поток (её длительность — в ctx.up отчёта «start»), поэтому считаем с 3-й секунды после старта игры.
@@ -122,7 +131,7 @@
   function rf() { frames++; global.requestAnimationFrame(rf); }
   global.requestAnimationFrame(rf);
   setInterval(function () {
-    var fps = frames / 5; frames = 0;
+    var fps = frames / 5; frames = 0; fpsNow = fps;
     if (!FC().started || document.hidden || lowSent) { low = 0; return; }
     low = fps < 8 ? low + 1 : 0;
     if (low >= 3) { lowSent = true; report("lowfps", "мало кадров: " + fps.toFixed(1) + " к/с"); }
@@ -156,5 +165,9 @@
   }, 5000);
 
   global.FC = global.FC || {};
-  global.FC.err = { report: function (kind, msg, data) { report(kind === "state" || kind === "console" ? kind : "state", msg, data && data.stack, data); }, sid: SID };
+  global.FC.err = {
+    report: function (kind, msg, data) { report(kind === "state" || kind === "console" ? kind : "state", msg, data && data.stack, data); },
+    sid: SID, ctx: ctx, fps: function () { return fpsNow; }, flush: function () { flush(); },
+    log: function () { return LOG.slice(); }
+  };
 })(window);

@@ -26,5 +26,8 @@ console.log(`dist/: ${n} модулей, ${(before / 1024).toFixed(0)} → ${(af
 // страница «Статус города» (status.html): лента изменений по дням из git — свежее (проверки, PR, идеи) она берёт с GitHub сама
 try { require("child_process").execFileSync(process.execPath, [path.join(__dirname, "status", "build-status.cjs"), path.join(OUT, "status.json")], { stdio: "inherit" }); }
 catch (e) { console.warn("status.json не собран:", e.message); }
+// журнал изменений (changes.json): «новая правка» и «что нового» в игре (fupdate.js), лента на contribute.html и status.html
+try { require("child_process").execFileSync(process.execPath, [path.join(__dirname, "status", "build-changes.cjs"), path.join(OUT, "changes.json")], { stdio: "inherit" }); }
+catch (e) { console.warn("changes.json не собран:", e.message); }
 // пакет кода для ИИ (dist/dev/): llms.txt, исходники, архив, навык Claude, действие для своего GPT — tools/dev-pack.cjs
 try { require("./dev-pack.cjs").pack(OUT); } catch (e) { console.warn("dist/dev/ не собран:", e.message); }

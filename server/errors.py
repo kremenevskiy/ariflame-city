@@ -11,14 +11,18 @@
   POST /g/err                {sid, items: [{kind, msg, stack?, src?, line?, at?, ctx?, n?}]} → 204 / 400 / 413 / 429
   GET  /g/admin/errors       X-Admin-Key → сводка: свежие сверху (?hours=24&limit=100&kind=)
   GET  /g/admin/errors/<fp>  X-Admin-Key → последние события этого отпечатка
+  POST /g/report             «Сообщить о проблеме» (client/freport.js): {sid, data, shot?} → {code: "R-7K2F"}
+  GET  /g/admin/reports      X-Admin-Key → последние обращения; /g/admin/reports/<code> — целиком, <code>.jpg — снимок
 Лимиты: тело ≤ 32 КБ, в пачке ≤ 20; на сессию — 60 событий в час, на весь сервер — 20 000 в сутки.
 
 Подключает app.py: `app.include_router(errors.make_router(db, fcmodes.admin_key))`; `errors.record_server(store, …)`.
 """
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
+import os
 import re
 import secrets
 import time
@@ -33,7 +37,15 @@ TOTAL_N, TOTAL_WIN = 20000, 86400.0
 RECENT_KEEP = 1000
 KINDS = {"js", "promise", "console", "load", "webgl", "freeze", "lowfps", "start", "state", "server"}
 
+REPORT_MAX = 128 * 1024        # «Сообщить о проблеме» (client/freport.js): данные + снимок ≤ 82 КБ base64; прокси — те же 128 КБ
+REPORT_SHOT = 96 * 1024        # снимок JPEG после base64 — не больше
+REPORT_KEEP = 3000             # храним последние обращения (и их снимки)
+REPORT_SID_N, REPORT_ALL_N = 6, 600     # в час на сеанс; в сутки на весь сервер
+CODE_ABC = "ACDEFHJKMNPRTUVWXY34679"     # без похожих (0/O, 1/I/L, 2/Z, 5/S, 8/B)
+
 _sid_hits: dict[str, deque] = {}
+_rep_hits: dict[str, deque] = {}
+_rep_all: deque = deque()
 _total: deque = deque()
 
 SCHEMA = """
@@ -48,6 +60,10 @@ CREATE TABLE IF NOT EXISTS err_recent (
 );
 CREATE INDEX IF NOT EXISTS err_recent_fp ON err_recent (fp, id DESC);
 CREATE TABLE IF NOT EXISTS err_seen (fp TEXT NOT NULL, sid TEXT NOT NULL, PRIMARY KEY (fp, sid));
+CREATE TABLE IF NOT EXISTS reports (
+    code TEXT PRIMARY KEY, at INTEGER NOT NULL, sid TEXT, text TEXT, data TEXT NOT NULL, shot INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS reports_at ON reports (at DESC);
 """
 
 
@@ -169,8 +185,56 @@ def record_server(store, route: str, exc: BaseException, tb: str) -> None:
         pass
 
 
-def make_router(db, admin_key) -> APIRouter:
-    """db() → Store (app.py), admin_key() → ключ админ-ручек (modes.admin_key)."""
+def _rep_limit(sid: str) -> bool:
+    now = time.time()
+    while _rep_all and now - _rep_all[0] > 86400:
+        _rep_all.popleft()
+    q = _rep_hits.setdefault(sid, deque())
+    while q and now - q[0] > 3600:
+        q.popleft()
+    if len(q) >= REPORT_SID_N or len(_rep_all) >= REPORT_ALL_N:
+        return False
+    q.append(now)
+    _rep_all.append(now)
+    if len(_rep_hits) > 5000:
+        for k in [k for k, v in _rep_hits.items() if not v or now - v[-1] > 3600]:
+            _rep_hits.pop(k, None)
+    return True
+
+
+def _code() -> str:
+    return "R-" + "".join(secrets.choice(CODE_ABC) for _ in range(4))
+
+
+def save_report(store, shots_dir: str, sid: str, text: str, data: dict, shot: bytes | None) -> str:
+    """Обращение в базу, снимок — файлом <code>.jpg рядом; старше REPORT_KEEP — вон вместе со снимками."""
+    now = int(time.time())
+    with store.lock:
+        for _ in range(20):
+            code = _code()
+            if not store.db.execute("SELECT 1 FROM reports WHERE code = ?", (code,)).fetchone():
+                break
+        else:
+            code = "R-" + secrets.token_hex(4).upper()
+        if shot:
+            os.makedirs(shots_dir, mode=0o750, exist_ok=True)
+            with open(os.path.join(shots_dir, code + ".jpg"), "wb") as f:
+                f.write(shot)
+        store.db.execute("INSERT INTO reports (code, at, sid, text, data, shot) VALUES (?, ?, ?, ?, ?, ?)",
+                         (code, now, sid, text, json.dumps(data, ensure_ascii=False), 1 if shot else 0))
+        old = store.db.execute("SELECT code, shot FROM reports ORDER BY at DESC LIMIT -1 OFFSET ?", (REPORT_KEEP,)).fetchall()
+        for r in old:
+            store.db.execute("DELETE FROM reports WHERE code = ?", (r[0],))
+            if r[1]:
+                try:
+                    os.remove(os.path.join(shots_dir, r[0] + ".jpg"))
+                except OSError:
+                    pass
+    return code
+
+
+def make_router(db, admin_key, shots_dir=lambda: "reports") -> APIRouter:
+    """db() → Store (app.py), admin_key() → ключ админ-ручек (modes.admin_key), shots_dir() → папка снимков обращений."""
     rt = APIRouter()
     ready = {"ok": False}
 
@@ -220,6 +284,76 @@ def make_router(db, admin_key) -> APIRouter:
         for it in items:
             record(st, sid, it)
         return Response(status_code=204)
+
+    @rt.post("/g/report")
+    async def report_problem(request: Request):
+        """«Сообщить о проблеме» (client/freport.js): {sid, data, shot?} → {code}. Без аккаунта: данные игры и текст игрока."""
+        raw = await request.body()
+        if len(raw) > REPORT_MAX:
+            raise HTTPException(413, "too large")
+        try:
+            body = json.loads(raw or b"{}")
+        except ValueError:
+            raise HTTPException(400, "bad json") from None
+        if not isinstance(body, dict) or not isinstance(body.get("data"), dict):
+            raise HTTPException(400, "data")
+        sid = _clip(body.get("sid"), 24)
+        if not re.fullmatch(r"[A-Za-z0-9_-]{6,24}", sid):
+            raise HTTPException(400, "sid")
+        shot = None
+        b64 = body.get("shot")
+        if isinstance(b64, str) and b64:
+            if len(b64) > REPORT_SHOT:
+                raise HTTPException(413, "shot")
+            try:
+                shot = base64.b64decode(b64, validate=True)
+            except ValueError:
+                raise HTTPException(400, "shot") from None
+            if shot[:3] != b"\xff\xd8\xff":                       # только JPEG — снимок отдаём админке как image/jpeg
+                raise HTTPException(400, "shot")
+        if not _rep_limit(sid):
+            raise HTTPException(429, "slow down")
+        data = body["data"]
+        text = _clip(data.get("text"), 1000)
+        code = save_report(store(), shots_dir(), sid, text, data, shot)
+        return {"code": code}
+
+    @rt.get("/g/admin/reports")
+    def reports(request: Request, limit: int = 50):
+        need_admin(request)
+        st = store()
+        with st.lock:
+            rows = st.db.execute("SELECT code, at, sid, text, data, shot FROM reports ORDER BY at DESC LIMIT ?",
+                                 (max(1, min(limit, 500)),)).fetchall()
+        out = []
+        for r in rows:
+            d = json.loads(r["data"] or "{}")
+            p, pl = d.get("player") or {}, d.get("place") or {}
+            out.append({"code": r["code"], "at": r["at"], "sid": r["sid"], "text": (r["text"] or "")[:160], "shot": bool(r["shot"]),
+                        "where": [p.get("x"), p.get("z")], "mode": p.get("mode"), "district": pl.get("district"),
+                        "city": pl.get("city"), "v": (d.get("ctx") or {}).get("v")})
+        return {"items": out}
+
+    @rt.get("/g/admin/reports/{code}")
+    def report_one(code: str, request: Request):
+        need_admin(request)
+        jpg = code.endswith(".jpg")
+        code = code[:-4] if jpg else code
+        if not re.fullmatch(r"R-[A-Z0-9]{4,8}", code):
+            raise HTTPException(404, "Not Found")
+        st = store()
+        with st.lock:
+            r = st.db.execute("SELECT * FROM reports WHERE code = ?", (code,)).fetchone()
+        if not r:
+            raise HTTPException(404, "Not Found")
+        if jpg:
+            p = os.path.join(shots_dir(), code + ".jpg")
+            if not r["shot"] or not os.path.isfile(p):
+                raise HTTPException(404, "Not Found")
+            with open(p, "rb") as f:
+                return Response(f.read(), media_type="image/jpeg")
+        return {"code": r["code"], "at": r["at"], "sid": r["sid"], "text": r["text"], "shot": bool(r["shot"]),
+                "data": json.loads(r["data"] or "{}")}
 
     @rt.get("/g/admin/errors")
     def summary(request: Request, hours: float = 24, limit: int = 100, kind: str = ""):

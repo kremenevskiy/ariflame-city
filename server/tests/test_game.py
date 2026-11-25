@@ -280,3 +280,42 @@ def test_cities_do_not_mix(client):
     finally:
         for s in socks:
             s.__exit__(None, None, None)
+
+
+def test_city_numbers(client):
+    """Город в цифрах (stats.py): кто заходил, сегодня, рекорд онлайна, по городам — без rid и ников наружу."""
+    import stats
+    stats._cache.clear()
+    with client.websocket_connect("/g/ws", headers=ORIGIN) as a, client.websocket_connect("/g/ws", headers=ORIGIN) as b:
+        hello(a, guest="g-numa", city="minsk")
+        hello(b, token="tok-0000a0a0")
+        st = client.get("/g/stats").json()
+        assert st["online"] == 2 and st["cities"] == {"minsk": 1, "flame": 1}
+        assert st["today"]["peak"] >= 2 and st["peak_all"] >= 2 and st["peak"] >= 2
+        assert st["today"]["visitors"] >= 2 and st["today"]["new"] >= 2 and st["visitors_total"] >= 2
+        assert len(st["days"]) == 14 and st["days"][-1]["day"] == stats.day_of(time.time())
+        assert "g-numa" not in str(st) and "0000a0a0" not in str(st)
+    assert wait(lambda: not fcg.clients)
+    stats._cache.clear()
+    with client.websocket_connect("/g/ws", headers=ORIGIN) as a:     # тот же гость снова — не новый человек
+        hello(a, guest="g-numa", city="minsk")
+        st2 = client.get("/g/stats").json()
+    assert st2["visitors_total"] == st["visitors_total"] and st2["today"]["sessions"] == st["today"]["sessions"] + 1
+    assert st2["peak_all"] >= 2 and st2["online"] == 1
+
+
+def test_announce_update(client, monkeypatch):
+    """Новая версия (pull-live.sh → /g/admin/announce): всем в онлайне — «перезагрузка через N с»; без ключа — 404."""
+    monkeypatch.setenv("FC_ADMIN_KEY", "test-admin-key")
+    with client.websocket_connect("/g/ws", headers=ORIGIN) as a:
+        hello(a, guest="g-upda")
+        assert client.post("/g/admin/announce", json={"v": "abc1234"}).status_code == 404
+        h = {"x-admin-key": "test-admin-key"}
+        assert client.post("/g/admin/announce", json={"v": "../x"}, headers=h).status_code == 400
+        r = client.post("/g/admin/announce", json={"v": "abc1234", "in": 999, "server": True}, headers=h)
+        assert r.status_code == 200 and r.json()["sent"] == 1
+        for _ in range(80):
+            m = a.receive_json()
+            if m["t"] == "upd":
+                break
+        assert m == {"t": "upd", "v": "abc1234", "in": 60, "server": True}

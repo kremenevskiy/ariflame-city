@@ -80,8 +80,22 @@ async function main() {
     // заголовки запусков проверок — это заголовки PR: у скрытых PR скрываем и их
     const hiddenPR = new Set(out.openPRs.filter((p) => p.hidden).map((p) => p.number));
     out.runs.forEach((r) => { r.title = r.pr && hiddenPR.has(r.pr) ? HIDDEN : clean(r.title); });
-    out.merged = await safe("merged", async () => (await gh(`/search/issues?q=${encodeURIComponent(`repo:${REPO} is:pr is:merged merged:>=${since.slice(0, 10)}`)}&sort=updated&order=desc&per_page=100`)).items
-      .map((i) => ({ number: i.number, title: clean(i.title), url: i.html_url, user: who(i.user), at: (i.pull_request && i.pull_request.merged_at) || i.closed_at, labels: i.labels.map((l) => l.name) })), []);
+    // все влитые PR (до 500) — для «города в цифрах»; правка с сайта (contrib-intake) — автор по нику из описания PR
+    const SITE_AUTHOR = /с сайта без GitHub[^\n]*?автор: \*\*([^*\n]{1,40})\*\*/;
+    const allMerged = await safe("merged", async () => {
+      const items = [];
+      for (let page = 1; page <= 5; page++) {
+        const r = await gh(`/search/issues?q=${encodeURIComponent(`repo:${REPO} is:pr is:merged`)}&sort=created&order=desc&per_page=100&page=${page}`);
+        items.push(...r.items);
+        if (r.items.length < 100) break;
+      }
+      return items.map((i) => {
+        const m = SITE_AUTHOR.exec(i.body || ""), nick = m ? m[1].trim() : "";
+        return { number: i.number, title: clean(i.title), url: i.html_url, user: who(i.user), at: (i.pull_request && i.pull_request.merged_at) || i.closed_at,
+          labels: i.labels.map((l) => l.name), site: nick ? clean(nick, "игрок") : null };
+      }).sort((a, b) => (a.at < b.at ? 1 : -1));
+    }, []);
+    out.merged = allMerged.filter((m) => m.at >= since);
     // идеи: обсуждения категории «Идеи» (голоса — upvote) и issues-идеи (голоса — 👍)
     out.ideas = await safe("ideas", async () => {
       const d = await gql(`query($o:String!,$n:String!){repository(owner:$o,name:$n){discussions(first:60,orderBy:{field:UPDATED_AT,direction:DESC}){nodes{number title url upvoteCount createdAt author{login avatarUrl} category{name slug} comments{totalCount} labels(first:5){nodes{name}}}}}}`, { o: owner, n: name });
@@ -95,6 +109,16 @@ async function main() {
       .sort((a, b) => b.votes - a.votes || b.comments - a.comments).slice(0, 30);
     out.contributors = await safe("contributors", async () => (await gh(`/repos/${REPO}/contributors?per_page=60`)).filter((c) => c.type === "User" && !W.bad(c.login))
       .map((c) => ({ login: c.login, avatar: c.avatar_url, commits: c.contributions })), []);
+    // город в цифрах: сколько правок влито и сколько разных людей строит город (логины GitHub + ники правок с сайта)
+    const builders = new Set();
+    (out.contributors || []).forEach((c) => builders.add("gh:" + c.login.toLowerCase()));
+    allMerged.forEach((m) => {
+      if (m.site) builders.add("site:" + m.site.toLowerCase());
+      else if (m.user && !/\[bot\]$/.test(m.user.login)) builders.add("gh:" + m.user.login.toLowerCase());
+    });
+    out.totals = { merged: allMerged.length, site: allMerged.filter((m) => m.site).length, builders: builders.size,
+      week: allMerged.filter((m) => Date.parse(m.at) > Date.now() - 7 * 86400e3).length,
+      stars: out.repoInfo ? out.repoInfo.stars : null };
     out.live = await safe("live", async () => { const r = await gh(`/repos/${REPO}/releases/tags/live`); return { name: r.name, at: r.published_at, url: r.html_url, body: (r.body || "").slice(0, 300) }; }, null);
   }
 
@@ -102,7 +126,8 @@ async function main() {
   const feed = {};
   const push = (d, e) => { (feed[d] = feed[d] || []).push(e); };
   const prNums = new Set((out.merged || []).map((m) => m.number));
-  (out.merged || []).forEach((m) => push(day(m.at), { type: "merged", title: m.title, url: m.url, user: m.user, at: m.at, number: m.number, labels: m.labels }));
+  (out.merged || []).forEach((m) => push(day(m.at), { type: "merged", title: m.title, url: m.url, user: m.site ? { login: m.site } : m.user, site: !!m.site,
+    at: m.at, number: m.number, labels: m.labels }));
   out.commits.forEach((c) => { if (!c.pr || !prNums.has(c.pr)) push(day(c.at), { type: "commit", title: c.title, sha: c.short, user: { login: c.author }, at: c.at,
     url: `https://github.com/${REPO}/commit/${c.sha}` }); });
   (out.runs || []).filter((r) => r.name === "Выпуск" && r.conclusion === "success").forEach((r) => push(day(r.at), { type: "deploy", title: r.title, url: r.url, at: r.at }));

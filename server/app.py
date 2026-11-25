@@ -24,6 +24,8 @@ HTTP: GET /g/health, /g/stats, /g/top; POST /g/save {token, save, creature?}, /g
 media.py, events.py.
 Режимы (modes.py, 22.11.2026 v2): гонки с временем по серверу, честность сохранений, «коп против вора», совместный налёт,
 рейтинг районов — кадры race/room/coop/dist, ручки /g/races, /g/districts, /g/admin/winners; welcome несёт modes: 1.
+Кататься вместе (ride.py, 25.11.2026): кадры ride — пассажиры в машине и вертолёте другого игрока, места решает сервер;
+строка пассажира в w — m 5 (копия водителя, a — место); welcome несёт ride: 1.
 
     uvicorn app:app --host 127.0.0.1 --port 8091      (README.md — запуск; docs/DEPLOY.md — выкладка и прокси)
 """
@@ -57,6 +59,7 @@ import errors as fcerrors  # noqa: E402 — ошибки у игроков и с
 import stats as fcstats  # noqa: E402 — город в цифрах (/g/stats)
 import traceback  # noqa: E402
 import nicks  # noqa: E402 — ник игрока: проверка, хранение, лимиты смен
+import ride as fcride  # noqa: E402 — кататься вместе: пассажиры в чужой машине и вертолёте
 
 # Имена кодов облика (необязательный набор видов). Пусто — ники «Игрок»/«Гость».
 CREATURE_NAMES: dict[str, str] = {}
@@ -383,6 +386,7 @@ async def send(c: Client, obj) -> bool:
 
 
 MODES = fcmodes.Modes(db, send, clients)
+RIDE = fcride.Ride(clients, send, MODES.speed)
 
 
 async def kick(c: Client, code: int):
@@ -407,6 +411,10 @@ async def drop(c: Client):
         await MODES.on_leave(c)                              # гонка, комната (хозяин передаётся, раунд кончается)
     except Exception:                                       # noqa: BLE001 — уход игрока не должен ронять остальных
         log.exception("режимы: уход %s", c.id)
+    try:
+        await RIDE.on_leave(c)                               # водитель ушёл — пассажиры выходят; пассажир — место свободно
+    except Exception:                                       # noqa: BLE001
+        log.exception("поездка: уход %s", c.id)
     for o in list(clients.values()):
         o.known.discard(c.id)
         if c.id in o.vis:
@@ -441,6 +449,8 @@ def on_state(c: Client, m: dict) -> bool:
     p = m.get("p")
     if not (isinstance(p, list) and len(p) == 4 and all(_num(v) for v in p)):
         return False
+    if c.id in RIDE.seat_of:
+        return True                                          # пассажир: его место — в машине водителя (ride.py копирует)
     x, y, z, h = (float(v) for v in p)
     mode = m.get("m") if m.get("m") in (0, 1, 2, 3, 4) else 0
     glim, alim = CITY_LIM.get(c.city, (LIM, AIR_LIM))
@@ -521,6 +531,7 @@ async def tick():
     for c in list(clients.values()):
         if now - c.last > SILENCE:
             await kick(c, 4003)
+    await RIDE.tick()                                        # пассажиры — на места в машинах водителей, до сетки ближних
     grid: dict[tuple[int, int], list[Client]] = {}
     for c in clients.values():
         if c.state:
@@ -677,7 +688,7 @@ async def ws_endpoint(ws: WebSocket):
                 await asyncio.to_thread(MODES.set_district, rid, hi.get("d"))
     except sqlite3.Error:
         log.exception("база игры не записала сессию")
-    await send(c, {"t": "welcome", "id": c.id, "online": len(clients), "guest": guest, "emo": EMO, "modes": 1,
+    await send(c, {"t": "welcome", "id": c.id, "online": len(clients), "guest": guest, "emo": EMO, "modes": 1, "ride": 1,
                    "fid": c.fid, "lvl": c.lvl, "tag": c.ctag, "name": c.name})
     try:
         while not c.closed:
@@ -704,7 +715,10 @@ async def ws_endpoint(ws: WebSocket):
                 if isinstance(m, dict):
                     t = m.get("t")
                     if t == "s":
+                        prev = c.state
                         ok = on_state(c, m)
+                        if ok:
+                            await RIDE.after_state(c, prev, m)       # водитель: позиция пассажирам; вышел — высадить
                     elif t == "emo":
                         ok = await on_emo(c, m)
                     elif t == "nick":
@@ -723,6 +737,8 @@ async def ws_endpoint(ws: WebSocket):
                         ok = await MODES.social(c, m)
                     elif t == "dist":
                         ok = c.guest or await asyncio.to_thread(MODES.set_district, c.rid, m.get("d")) or True
+                    elif t == "ride":
+                        ok = await RIDE.msg(c, m)
             if not ok:
                 c.bad += 1
                 if c.bad > BAD_LIMIT:

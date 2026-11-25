@@ -84,6 +84,24 @@ h2 span{font:400 14px/1.3 var(--body);text-transform:none;letter-spacing:0;color
 .empty{color:var(--muted);padding:6px 0 2px}
 .card.empty{padding:14px 16px}
 
+/* люди в городе: столбики «игроков за день» — один ряд, подписи датами, подсказка на наведение/фокус */
+.board.tech{grid-template-columns:repeat(3,1fr);margin-bottom:18px}
+.chart{padding:16px 16px 12px}
+.bars{display:flex;align-items:flex-end;gap:2px;height:180px;border-bottom:1px solid var(--line);position:relative}
+.bar{flex:1;position:relative;height:100%;display:flex;align-items:flex-end;outline:none;cursor:default}
+.bar i{display:block;width:100%;min-height:2px;background:var(--ember);border-radius:4px 4px 0 0;opacity:.85}
+.bar.today i{background:var(--flame);opacity:1}
+.bar:hover i,.bar:focus-visible i{opacity:1;filter:brightness(1.12)}
+.bar b{position:absolute;left:50%;transform:translateX(-50%);font:600 13px/1 var(--disp);color:var(--warm);white-space:nowrap}
+.bar .tip{display:none;position:absolute;bottom:calc(100% + 8px);left:50%;transform:translateX(-50%);z-index:2;background:#0b1430;
+  border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:12.5px;line-height:1.45;white-space:nowrap;color:var(--warm);box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.bar:first-child .tip{left:0;transform:none}.bar:last-child .tip{left:auto;right:0;transform:none}
+.bar:hover .tip,.bar:focus-visible .tip{display:block}
+.axis{display:flex;gap:2px;margin-top:6px}.axis span{flex:1;text-align:center;font-size:11.5px;color:var(--muted)}
+.cnote{margin:10px 0 0;color:var(--muted);font-size:13px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+.row .t p.desc{margin:2px 0 0;color:var(--muted);font-size:13px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
 /* лента по дням — как журнал заданий */
 .days{display:grid;gap:14px}
 .day{display:grid;grid-template-columns:150px 1fr;gap:16px}
@@ -115,7 +133,8 @@ footer{border-top:1px solid var(--line);padding:22px 0 40px;color:var(--muted);f
 footer a{color:var(--warm)}
 
 @media (max-width:860px){
-  .board{grid-template-columns:repeat(2,1fr)}.grid2,.steps{grid-template-columns:1fr}
+  .board,.board.tech{grid-template-columns:repeat(2,1fr)}
+  .axis span:nth-child(even){visibility:hidden}.grid2,.steps{grid-template-columns:1fr}
   .day{grid-template-columns:1fr;gap:6px}.day .d{padding-top:0}
   h2{flex-wrap:wrap;gap:4px 12px}h2 span{flex-basis:100%}
   .hero{min-height:620px}
@@ -135,17 +154,32 @@ footer a{color:var(--warm)}
     <h1>Город<br>строится</h1>
     <p class="lead">Флейм-Сити строят игроки: кто-то предлагает идею, кто-то делает её со своим ИИ, мы проверяем и выкатываем. <b>Здесь видно всё в прямом эфире</b> — что уехало на сайт, что проверяется, что добавилось за день.</p>
     <div class="board" aria-live="polite">
-      <div class="plate"><small>На сайте</small><b id="p-ver">—</b><i id="p-ver2">загружаю…</i></div>
-      <div class="plate"><small>Проверки</small><b id="p-ci">—</b><i id="p-ci2">загружаю…</i></div>
-      <div class="plate"><small>Сейчас идёт</small><b id="p-now">—</b><i id="p-now2">загружаю…</i></div>
       <div class="plate"><small>В городе</small><b id="p-on">—</b><i id="p-on2">игроков онлайн</i></div>
+      <div class="plate"><small>Сегодня</small><b id="p-day">—</b><i id="p-day2">заходили в город</i></div>
+      <div class="plate"><small>Всего</small><b id="p-all">—</b><i id="p-all2">игроков были в городе</i></div>
+      <div class="plate"><small>Строители</small><b id="p-bld">—</b><i id="p-bld2">людей добавили своё</i></div>
     </div>
   </div>
 </header>
 
 <main class="wrap">
+  <section aria-labelledby="ppl">
+    <h2 id="ppl">Люди в городе <span>сколько игроков заходило за две недели — наведи на столбик</span></h2>
+    <div class="card chart">
+      <div class="bars" id="bars" role="img" aria-label="Игроков за день, 14 дней"></div>
+      <div class="axis" id="axis" aria-hidden="true"></div>
+      <p class="cnote" id="cnote"></p>
+      <table class="sr" id="tbl"><caption>Игроков за день</caption><thead><tr><th>день</th><th>игроков</th><th>сеансов</th><th>рекорд онлайна</th></tr></thead><tbody></tbody></table>
+    </div>
+  </section>
+
   <section>
     <h2>Прямо сейчас <span id="gen"></span></h2>
+    <div class="board tech" aria-live="polite">
+      <div class="plate"><small>На сайте</small><b id="p-ver">—</b><i id="p-ver2">загружаю…</i></div>
+      <div class="plate"><small>Проверки</small><b id="p-ci">—</b><i id="p-ci2">загружаю…</i></div>
+      <div class="plate"><small>Сейчас идёт</small><b id="p-now">—</b><i id="p-now2">загружаю…</i></div>
+    </div>
     <div class="grid2">
       <div class="card"><h3>Проверки и выкатки</h3><div id="runs"><div class="empty">Загружаю…</div></div></div>
       <div class="card"><h3>Ждут проверки</h3><div id="prs"><div class="empty">Загружаю…</div></div></div>
@@ -217,6 +251,10 @@ footer a{color:var(--warm)}
   function render(S) {
     if (!S) { ["runs", "prs", "days", "ideas", "crew"].forEach(function (id) { $(id).innerHTML = "<div class='empty'>Данные пока не собрались — загляни через минуту.</div>"; }); return; }
     $("gen").textContent = "обновлено " + ago(S.generated);
+    var nb = S.totals ? S.totals.builders : (S.contributors || []).length;
+    $("p-bld").textContent = num(nb);
+    $("p-bld2").textContent = plural(nb, "человек добавил своё", "человека добавили своё", "человек добавили своё") +
+      (S.totals && S.totals.merged ? " · " + num(S.totals.merged) + " " + plural(S.totals.merged, "правка", "правки", "правок") : "");
     var runs = S.runs || [], ci = runs.filter(function (r) { return r.name === "CI"; });
     var running = runs.filter(function (r) { return r.status !== "completed"; });
     // табло: проверки
@@ -245,7 +283,9 @@ footer a{color:var(--warm)}
       var n = dayName(d.day);
       return "<div class='day'><div class='d'>" + esc(n[0]) + "<small>" + esc(n[1] || "") + (n[1] ? " · " : "") + d.items.length + " " + (d.items.length === 1 ? "изменение" : d.items.length < 5 ? "изменения" : "изменений") + "</small></div>" +
         "<div class='card'>" + d.items.slice(0, 14).map(function (e) {
-          return "<div class='row'><span class='kind " + e.type + "'>" + ICON[e.type] + "</span><div class='t'><a href='" + esc(e.url) + "' rel='noopener'>" + esc(e.title) + "</a><small>" +
+          var cx = e.type === "merged" ? CH.pr[e.number] : e.type === "commit" ? CH.sha[e.sha] : null;
+          return "<div class='row'><span class='kind " + e.type + "'>" + ICON[e.type] + "</span><div class='t'><a href='" + esc(e.url) + "' rel='noopener'>" + esc(e.title) + "</a>" +
+            (cx && cx.text ? "<p class='desc'>" + esc(cx.text) + "</p>" : "") + "<small>" +
             (e.type === "merged" ? "влит PR #" + e.number : e.type === "deploy" ? "выкачено на сайт" : "коммит " + esc(e.sha)) + " · " + esc((e.user && e.user.login) || "") + " · " + new Date(e.at).toLocaleTimeString("ru", { hour: "2-digit", minute: "2-digit" }) + "</small></div></div>";
         }).join("") + (d.items.length > 14 ? "<div class='empty'>и ещё " + (d.items.length - 14) + "</div>" : "") + "</div></div>";
     }).join("") : "<div class='empty'>За три недели изменений нет.</div>";
@@ -266,11 +306,51 @@ footer a{color:var(--warm)}
     fetch("version.txt", { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error(r.status); var lm = r.headers.get("last-modified"); return r.text().then(function (t) { return { v: t.trim(), at: lm }; }); })
       .then(function (x) { $("p-ver").innerHTML = "<span class='dot ok'></span>" + esc(x.v.slice(0, 7) || "—"); $("p-ver2").textContent = x.at ? "выкачено " + ago(x.at) : "версия сайта"; })
       .catch(function () { $("p-ver").textContent = "—"; $("p-ver2").textContent = "версия недоступна"; });
-    fetch("g/health", { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (h) { $("p-on").innerHTML = "<span class='dot " + (h.ok ? "ok" : "bad") + "'></span>" + (h.online || 0); })
-      .catch(function () { $("p-on").textContent = "—"; $("p-on2").textContent = "сервер игры недоступен"; });
+    // люди: игровой сервер (server/stats.py) — только счётчики
+    getJSON("g/stats").then(people).catch(function () { $("p-on").textContent = "—"; $("p-on2").textContent = "сервер игры недоступен"; });
   }
-  function tick() { load().then(render).catch(function () { render(null); }); live(); }
+  function num(n) { return n == null ? "—" : Number(n).toLocaleString("ru-RU"); }
+  function plural(n, a, b, c) { var m = n % 10, h = n % 100; return m === 1 && h !== 11 ? a : m >= 2 && m <= 4 && (h < 12 || h > 14) ? b : c; }
+  function people(st) {
+    var c = st.cities || {}, parts = [];
+    if (c.minsk) parts.push("Минск " + c.minsk); if (c.flame) parts.push("Флейм-Сити " + c.flame);
+    $("p-on").innerHTML = "<span class='dot ok'></span>" + num(st.online);
+    $("p-on2").textContent = parts.length ? parts.join(" · ") : "игроков онлайн";
+    var T = st.today || {};
+    $("p-day").textContent = num(T.visitors);
+    $("p-day2").textContent = T.new ? "заходили, " + num(T.new) + " впервые" : "заходили в город";
+    $("p-all").textContent = num(st.visitors_total);
+    $("p-all2").textContent = "были в городе · рекорд онлайна " + num(st.peak_all);
+    chart(st.days || [], T);
+  }
+  // столбики «игроков за день»: высота — от максимума, число — над столбиком только у сегодня и у максимума
+  function chart(days, T) {
+    if (!days.length) return;
+    var max = Math.max.apply(null, days.map(function (d) { return d.visitors; }).concat([1])), top = -1;
+    days.forEach(function (d, i) { if (d.visitors === max && top < 0) top = i; });
+    var MON = ["янв", "фев", "мар", "апр", "мая", "июн", "июл", "авг", "сен", "окт", "ноя", "дек"];
+    var lab = function (d) { var p = d.split("-"); return +p[2] + " " + MON[+p[1] - 1]; };
+    $("bars").innerHTML = days.map(function (d, i) {
+      var h = Math.round(d.visitors / max * 100), last = i === days.length - 1, show = (last || i === top) && d.visitors > 0;
+      return "<div class='bar" + (last ? " today" : "") + "' tabindex='0' aria-label='" + lab(d.day) + ": " + d.visitors + " " + plural(d.visitors, "игрок", "игрока", "игроков") + "'>" +
+        "<i style='height:" + Math.max(h, d.visitors ? 2 : 0) + "%'></i>" + (show ? "<b style='bottom:calc(" + h + "% + 6px)'>" + num(d.visitors) + "</b>" : "") +
+        "<span class='tip'><b style='position:static;transform:none'>" + (last ? "Сегодня" : lab(d.day)) + "</b><br>" + num(d.visitors) + " " + plural(d.visitors, "игрок", "игрока", "игроков") +
+        "<br>" + num(d.sessions) + " " + plural(d.sessions, "заход", "захода", "заходов") + (d.peak ? "<br>онлайн до " + num(d.peak) : "") + "</span></div>";
+    }).join("");
+    $("axis").innerHTML = days.map(function (d, i) { return "<span>" + (i === days.length - 1 ? "сег." : lab(d.day).split(" ")[0]) + "</span>"; }).join("");
+    $("tbl").querySelector("tbody").innerHTML = days.map(function (d) { return "<tr><td>" + d.day + "</td><td>" + d.visitors + "</td><td>" + d.sessions + "</td><td>" + d.peak + "</td></tr>"; }).join("");
+    var act = days.filter(function (d) { return d.visitors > 0; }), avg = act.length ? Math.round(act.reduce(function (a, d) { return a + d.visitors; }, 0) / act.length) : 0;
+    $("cnote").textContent = (avg ? "В среднем " + num(avg) + " " + plural(avg, "игрок", "игрока", "игроков") + " в день" : "Город только открылся") +
+      (T.hours ? " · сегодня в городе провели " + String(T.hours).replace(".", ",") + " ч" : "");
+  }
+  var CH = { sha: {}, pr: {} };
+  function changes() {
+    return getJSON("changes.json").then(function (j) {
+      CH = { sha: {}, pr: {} };
+      (j.items || []).forEach(function (c) { CH.sha[c.sha] = c; if (c.pr) CH.pr[c.pr] = c; });
+    }).catch(function () { /* без журнала — лента без описаний */ });
+  }
+  function tick() { Promise.all([load(), changes()]).then(function (a) { render(a[0]); }).catch(function () { render(null); }); live(); }
   tick();
   setInterval(tick, 60000);
 })();

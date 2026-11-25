@@ -127,7 +127,7 @@
       return "<div class='row'><span>" + chip(t.team) + "</span><span class='quiet'>районов " + t.held + " · влияние " + t.pts + " · игроков " + t.members + "</span></div>";
     }).join("");
     if (d.top && d.top.length) html += "<h4>Лучшие недели</h4><div class='card'>" + d.top.map(function (r, i) {
-      return "<p class='bz-hist'>" + (i + 1) + ". " + esc(creatureName(r.creature)) + " " + (TEAM[r.team] ? TEAM[r.team].emoji : "") + " — " + r.pts + "</p>";
+      return "<p class='bz-hist'>" + (i + 1) + ". " + esc(r.name || creatureName(r.creature)) + " " + (TEAM[r.team] ? TEAM[r.team].emoji : "") + " — " + r.pts + "</p>";
     }).join("") + "</div>";
     html += "<p class='jb-note'>Влияние в районе дают выручка твоих бизнесов в нём и доставки, захват и оборона точек, налёты, гонки и смены. " +
       "Набирать можно в родном районе банды, в своих и в соседних. В конце недели район уходит банде с наибольшим влиянием; её бизнесы в нём получают +10% к выручке. Призы — только игровые.</p>";

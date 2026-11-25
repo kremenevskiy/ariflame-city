@@ -16,7 +16,7 @@
     return s.social;
   }
   function fmt(n) { return n >= 10000 ? (n / 1000).toFixed(n >= 100000 ? 0 : 1).replace(".0", "") + "K" : String(Math.round(n)); }
-  function who() { var me = FC.me || {}; return (me.guest ? "Гость" : (me.name || me.creatureName || "Ты")) + " · Флеймграм"; }
+  function who() { var me = FC.me || {}, nk = FC.nick && FC.nick.name(); return (nk || (me.guest ? "Гость" : (me.name || me.creatureName || "Ты"))) + " · Флеймграм"; }
   function street(x, z) { return FC.story && FC.story.streetAt ? FC.story.streetAt(x, z) : M.district(x, z).name; }
 
   /* ---- пороги подписчиков: подарки и открытия --------------------------------------------------------- */

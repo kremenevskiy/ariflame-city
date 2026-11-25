@@ -619,6 +619,7 @@
     b.querySelector("#snd").addEventListener("click", function (e) { if (FC.audio) { FC.audio.setMuted(!FC.audio.muted); e.target.textContent = FC.audio.muted ? "выкл" : "вкл"; } });
     b.querySelector("#skip").addEventListener("click", function () { FC.setHour(FC.clock.hour + 3); toast("⏩ +3 часа", "", 1.5); });
     b.querySelector("#reset").addEventListener("click", function () { if (confirm("Стереть прогресс и начать сначала?")) { FC.resetSave(); location.reload(); } });
+    FC.emit("phone:settings", b.querySelector(".list"));          // модули добавляют свои строки (fnick.js — ник)
   } });
 
   /* ---- взаимодействия ---------------------------------------------------------------------------------------- */
@@ -659,6 +660,7 @@
         "<button type='button' class='main' id='resume'>Играть</button><button type='button' class='sec' id='ph'>Телефон</button></div>";
       pause.querySelector("#resume").addEventListener("click", function () { togglePause(false); });
       pause.querySelector("#ph").addEventListener("click", function () { togglePause(false); openPhone(); });
+      FC.emit("pause:open", pause.querySelector(".pcard"));       // модули дописывают своё (fnick.js — ник)
       FC.input.unlock();
     }
   }

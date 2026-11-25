@@ -5,7 +5,8 @@
  * Своё состояние — до 10 раз в секунду (стоя — раз в секунду, чтобы сервер не счёл соединение мёртвым).
  * Чужие игроки — существа kind "remote" (FC.people), позиции с задержкой 120 мс и интерполяцией; в машине — модель
  * FC.cars.visual(тип, цвет), если она есть. Бить других нельзя, столкнуться машинами — только у себя (толчок).
- * Над головой — табличка «🌐 вид существа» (имён в мире нет намеренно). Эмоции — только из готового списка сервера.
+ * Над головой — табличка «🌐 ник» (свой ник игрока — fnick.js / server/nicks.py; нет — ник из «Рейтинга», вид существа
+ * или «Гость»). Эмоции — только из готового списка сервера. Свой ник уходит в hi (копия с устройства) и кадром «nick».
  * Сохранение вошедшего (есть FC.net.token): при старте /g/load (берём, где больше stats.playMin), дальше /g/save
  * раз в 30 с — прогресс переживает смену устройства.
  *
@@ -63,10 +64,11 @@
     r = MP.remotes[id] = { id: id, meta: metas[id] || null, buf: [], ch: null, car: null, carKey: "", tag: null, seen: 0 };
     return r;
   }
-  // табличка: «🌐 [ТЕГ] ник · ⭐ уровень» (ник и уровень — progress.py, тег клана — crews.py); у гостя — вид существа
+  // табличка: «🌐 [ТЕГ] ник · ⭐ уровень» (свой ник — name, nicks.py; ник из рейтинга и уровень — progress.py, тег клана —
+  // crews.py); у гостя без ника — вид существа или «Гость»
   function tagText(m) {
     if (!m) return "🌐 Игрок";
-    var name = m.pn || creatureName(m.creature) || m.nick || "Игрок";
+    var name = m.name || m.pn || creatureName(m.creature) || m.nick || "Игрок";
     return "🌐 " + (m.tag ? "[" + m.tag + "] " : "") + name + (m.lvl ? " · ⭐" + m.lvl : "");
   }
   function setMeta(m) {
@@ -222,6 +224,8 @@
       // район для рейтинга районов — по своему дому (рейтинг пока только Флейм-Сити)
       if (me.home && me.home.dist && FC.city !== "minsk") hi.d = me.home.dist;
       if (FC.net && FC.net.token) hi.token = FC.net.token; else if (/^g-[a-z0-9]{4,16}$/.test(me.rid)) hi.guest = me.rid;
+      var nk = FC.nick && FC.nick.forHi();                       // свой ник с устройства — сервер проверит (fnick.js)
+      if (nk) hi.nick = nk;
       ws.send(JSON.stringify(hi));
     };
     ws.onmessage = function (e) {
@@ -235,7 +239,7 @@
       else if (m.t === "leave") { dropRemote(m.id); delete metas[m.id]; }
       else if (m.t === "emo") showEmo(m.id, m.k);
       else if (m.t === "online") setOnline(m.n);
-      else if (m.t === "race" || m.t === "room" || m.t === "coop" || m.t === "crew" || m.t === "prog") FC.emit("mp:" + m.t, m);
+      else if (m.t === "race" || m.t === "room" || m.t === "coop" || m.t === "crew" || m.t === "prog" || m.t === "nick") FC.emit("mp:" + m.t, m);
       else if ((m.t === "who" || m.t === "friends" || m.t === "locate") && m.q && pend[m.q]) { pend[m.q](m); delete pend[m.q]; }
       else if (m.t === "friend") onFriend(m);
       else if (m.t === "welcome") {
@@ -311,9 +315,10 @@
     return ask({ t: "who" }).then(function (m) {
       if (!m.ps) return whoCache || [];
       var P = FC.player;
-      // игроки другого города — не на этой карте (их координаты — чужого плана)
+      // игроки другого города — не на этой карте (их координаты — чужого плана); creatureName — имя для показа
+      // (карта, список): свой ник игрока или ник из «Рейтинга» (name), иначе вид существа, «Гость» или «Агент»
       whoCache = m.ps.filter(function (p) { return !p.me && (p.city || "flame") === (FC.city || "flame"); }).map(function (p) {
-        return { id: p.id, creature: p.creature, creatureName: creatureName(p.creature) || (p.guest ? "Гость" : "Агент"), guest: p.guest,
+        return { id: p.id, creature: p.creature, creatureName: p.name || creatureName(p.creature) || (p.guest ? "Гость" : "Агент"), name: p.name || null, guest: p.guest,
           district: districtName(p.x, p.z), x: p.x, z: p.z, m: p.m, friend: !!p.friend, d: P ? Math.round(Math.hypot(p.x - P.x, p.z - P.z)) : 0,
           fid: p.fid || null, lvl: p.lvl || null, tag: p.tag || null };
       }).sort(function (a, b) { return (b.friend - a.friend) || a.d - b.d; });
@@ -327,7 +332,7 @@
       friendReq = (m.req || []).filter(function (r) { return r.id != null; });
       (m.ps || []).forEach(function (f) { if (f.id != null) friendSet[f.id] = 1; });
       return (m.ps || []).map(function (f) {
-        return { fid: f.fid, id: f.id, creature: f.creature, creatureName: creatureName(f.creature) || "Агент", online: f.online, seenH: f.seen };
+        return { fid: f.fid, id: f.id, creature: f.creature, creatureName: f.name || creatureName(f.creature) || "Агент", online: f.online, seenH: f.seen };
       }).sort(function (a, b) { return b.online - a.online; });
     });
   };
@@ -358,10 +363,10 @@
   function onFriend(m) {
     if (!FC.hud) return;
     if (m.e === "req") {
-      friendReq = friendReq.filter(function (r) { return r.id !== m.id; }).concat([{ id: m.id, fid: m.fid, creature: m.creature }]);
+      friendReq = friendReq.filter(function (r) { return r.id !== m.id; }).concat([{ id: m.id, fid: m.fid, creature: m.creature, name: m.name }]);
       if (reqEl) reqEl.remove();
       reqEl = document.createElement("div"); reqEl.className = "fm-inv ui mp-req";
-      reqEl.innerHTML = "<b>🤝 " + FC.hud.esc(creatureName(m.creature) || "Агент") + " хочет дружить</b><p>Друзья видят друг друга на карте и могут переместиться друг к другу.</p>" +
+      reqEl.innerHTML = "<b>🤝 " + FC.hud.esc(m.name || creatureName(m.creature) || "Агент") + " хочет дружить</b><p>Друзья видят друг друга на карте и могут переместиться друг к другу.</p>" +
         "<button type='button' class='y'>Дружить</button><button type='button' class='n'>Нет</button>";
       document.body.appendChild(reqEl);
       var el = reqEl;
@@ -372,7 +377,7 @@
     } else if (m.e === "added") {
       if (m.id != null) friendSet[m.id] = 1;
       whoCache = null;
-      FC.hud.toast("🤝 Теперь вы друзья" + (m.creature ? ": " + (creatureName(m.creature) || "Агент") : ""), "ok", 3);
+      FC.hud.toast("🤝 Теперь вы друзья" + (m.name || m.creature ? ": " + (m.name || creatureName(m.creature) || "Агент") : ""), "ok", 3);
     } else if (m.e === "sent") FC.hud.toast("🤝 Запрос в друзья отправлен", "", 2.5);
     else if (m.e === "removed") { whoCache = null; FC.hud.toast("Удалено из друзей", "", 2); }
     else if (m.e === "err") FC.hud.toast(m.why || "Не получилось", "bad", 3);
@@ -477,9 +482,11 @@
     if (OFF) html += "<div class='card'><b>Онлайн выключен</b><p>Адрес страницы с ?mp=off.</p></div>";
     else if (!MP.connected) html += "<div class='card'><b>Нет связи с сервером онлайна</b><p>Играешь один — подключимся сами, как только сервер ответит.</p></div>";
     else {
-      html += "<div class='card'><b>🌐 В городе сейчас: " + MP.count + "</b><p>" + (MP.guest ?
-        "Ты гость: тебя видят как «Гость». " + FC.net.loginHint() :
-        "Тебя видят как твоё существо. Прогресс сохраняется на сервере.") + "</p></div>";
+      var nm = FC.nick && FC.nick.name();
+      html += "<div class='card'><b>🌐 В городе сейчас: " + MP.count + "</b><p>" +
+        (nm ? "Тебя видят как «" + esc(nm) + "». " : MP.guest ? "Ты гость: тебя видят как «Гость». " : "Тебя видят под ником из «Рейтинга». ") +
+        (MP.guest ? FC.net.loginHint() : "Прогресс сохраняется на сервере.") + "</p>" +
+        (FC.nick ? "<button type='button' data-nick='1' style='margin-top:6px'>" + (nm ? "Сменить ник" : "Назвать себя") + "</button>" : "") + "</div>";
       html += "<div class='card'><b>Эмоции</b><div class='mp-emo'>" + MP.EMO.map(function (e, i) {
         return "<button type='button' data-emo='" + i + "'>" + esc(e) + "</button>";
       }).join("") + "</div></div>";
@@ -502,6 +509,11 @@
       btn.addEventListener("click", function () { MP.emo(+btn.dataset.emo); ctx.close(); });
     });
     b.querySelectorAll("[data-prof]").forEach(function (x) { x.addEventListener("click", function () { FC.ranks.show(x.dataset.prof); }); });
+    var nb = b.querySelector("[data-nick]");
+    if (nb) nb.addEventListener("click", function () {
+      FC.nick.open();
+      var off = FC.on("nick", function () { off(); if (document.body.contains(b)) ctx.refresh(); });
+    });
     if (!OFF) {
       FC.gfetch("/g/top").then(function (r) { return r.json(); }).then(function (d) {
         var el = b.querySelector(".mp-top"); if (!el) return;
@@ -534,7 +546,7 @@
       var html = "<b>⭐ Друзья</b>";
       if (MP.guest) html += "<p>Друзья — после входа в аккаунт. " + esc(FC.net.loginHint()) + "</p>";
       html += friendReq.map(function (r) {
-        return "<p>🤝 " + esc(creatureName(r.creature) || "Агент") + " хочет дружить <button type='button' data-acc='" + r.id + "'>Да</button> " +
+        return "<p>🤝 " + esc(r.name || creatureName(r.creature) || "Агент") + " хочет дружить <button type='button' data-acc='" + r.id + "'>Да</button> " +
           "<button type='button' class='ghost' data-dec='" + r.id + "'>Нет</button></p>";
       }).join("");
       html += list.length ? list.map(function (f) {

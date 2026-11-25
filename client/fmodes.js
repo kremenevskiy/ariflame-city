@@ -435,7 +435,7 @@
         }
         if (S.boards.last && S.boards.last.length) {
           html += "<div class='card'><b>Прошлая неделя</b>" + S.boards.last.map(function (x) {
-            return "<p>" + ["", "🥇", "🥈", "🥉"][x.place] + " " + esc(creatureName(x.creature)) + " — " + fmtMs(x.ms) + "</p>";
+            return "<p>" + ["", "🥇", "🥈", "🥉"][x.place] + " " + esc(x.name || creatureName(x.creature)) + " — " + fmtMs(x.ms) + "</p>";
           }).join("") + "</div>";
         }
       } else html += "<div class='card'><b>Таблица рекордов</b><p>" + (http() ? "загружаю…" : "онлайн выключен") + "</p></div>";
@@ -460,7 +460,7 @@
     function table(rows) {
       if (!rows || !rows.length) return "<p class='quiet'>Пока никто не проехал — стань первым.</p>";
       return "<table class='fm-tbl'>" + rows.map(function (r, i) {
-        return "<tr><td>" + (i + 1) + ".</td><td>" + esc(creatureName(r.creature)) + "</td><td style='text-align:right'>" + fmtMs(r.ms) + "</td></tr>";
+        return "<tr><td>" + (i + 1) + ".</td><td>" + esc(r.name || creatureName(r.creature)) + "</td><td style='text-align:right'>" + fmtMs(r.ms) + "</td></tr>";
       }).join("") + "</table>";
     }
     draw();
@@ -485,7 +485,7 @@
         html += "<div class='card'><b>" + (R.kind === "cvt" ? "🚓 Коп против вора" : "💰 Налёт на инкассатора") + " · " + (R.phase === "run" ? "идёт" : "сбор") +
           "</b>" + R.players.map(function (p) {
             var role = p.role ? { driver: "водитель", hacker: "хакер", loader: "грузчик", cop: "коп", thief: "вор" }[p.role] || p.role : "";
-            return "<p>" + (p.id === R.host ? "👑 " : "") + esc(creatureName(p.creature)) + (p.id === me ? " (ты)" : "") + (role ? " · " + role : "") + "</p>";
+            return "<p>" + (p.id === R.host ? "👑 " : "") + esc(p.name || creatureName(p.creature)) + (p.id === me ? " (ты)" : "") + (role ? " · " + role : "") + "</p>";
           }).join("");
         if (R.kind === "coop" && R.phase === "lobby") {
           html += "<div class='fm-roles'>" + ["driver", "hacker", "loader"].map(function (r) {

@@ -177,6 +177,8 @@ def _forms(text: str) -> list[str]:
             b = b.replace(k, v)
         b = _collapse(re.sub(r"[_\W]", "", b.replace("ё", "е")))
         out += [a, b, _collapse(re.sub(r"[_\W]", "", t))]
+        # и без схлопывания повторов: слова списка с двойной буквой (n…gg…, f…gg…, a…ss…) схлопнутая форма не находила
+        out += [re.sub(r"[_\W]", "", t.translate(_LOOK)), re.sub(r"[_\W]", "", t)]
     return out
 
 
@@ -322,7 +324,7 @@ def _trim_chat(db, crew: int) -> None:
 
 def _nick(db, rid: str) -> str:
     import progress
-    return progress.nick_of(progress.row_of(db, rid))
+    return progress.nick_of(progress.row_of(db, rid), db)
 
 
 def _honest_money(db, rid: str) -> float | None:
@@ -666,7 +668,7 @@ def _msg(db, r) -> dict:
     if r["rid"]:
         p = progress.row_of(db, r["rid"])
         cre = db.execute("SELECT creature FROM players WHERE rid = ?", (r["rid"],)).fetchone()
-        out.update({"fid": p["fid"], "nick": progress.nick_of(p), "cre": cre["creature"] if cre else None})
+        out.update({"fid": p["fid"], "nick": progress.nick_of(p, db), "cre": cre["creature"] if cre else None})
     return out
 
 
@@ -879,7 +881,7 @@ def public_crew(store, crew: int, online=None) -> dict | None:
         mem = []
         for x in _members(db, crew):
             p = progress.row_of(db, x["rid"])
-            mem.append({"fid": p["fid"], "nick": progress.nick_of(p), "cre": x["creature"], "lvl": int(p["lvl"]),
+            mem.append({"fid": p["fid"], "nick": progress.nick_of(p, db), "cre": x["creature"], "lvl": int(p["lvl"]),
                         "role": x["role"], "online": bool(online and online(x["rid"]))})
         c.update({"members": mem, "power": power(db, crew), "hq_city": r["hq_city"], "hq_dist": r["hq_dist"],
                   "hq_lvl": int(r["hq_lvl"]), "created": int(r["created_at"]),
@@ -919,7 +921,7 @@ def state(store, rid: str, online=None, now: float | None = None) -> dict:
         mem = []
         for x in _members(db, crew):
             p = progress.row_of(db, x["rid"])
-            mem.append({"fid": p["fid"], "nick": progress.nick_of(p), "cre": x["creature"], "lvl": int(p["lvl"]),
+            mem.append({"fid": p["fid"], "nick": progress.nick_of(p, db), "cre": x["creature"], "lvl": int(p["lvl"]),
                         "role": x["role"], "given": int(x["given"]), "helps": int(x["helps"]), "joined": int(x["joined"]),
                         "me": x["rid"] == rid, "online": bool(online and online(x["rid"])),
                         "seen": int(x["updated_at"]) if x["updated_at"] else None})
@@ -937,7 +939,7 @@ def state(store, rid: str, online=None, now: float | None = None) -> dict:
         for h in db.execute("SELECT * FROM crew_help WHERE crew = ? AND done = 0 ORDER BY id DESC LIMIT 30", (crew,)):
             p = progress.row_of(db, h["rid"])
             who = json.loads(h["who"] or "[]")
-            helps.append({"id": int(h["id"]), "nick": progress.nick_of(p), "fid": p["fid"], "name": h["name"],
+            helps.append({"id": int(h["id"]), "nick": progress.nick_of(p, db), "fid": p["fid"], "name": h["name"],
                           "city": h["city"], "key": h["bkey"], "got": int(h["got"]), "need": int(h["need"]),
                           "mine": h["rid"] == rid, "helped": rid in who, "at": int(h["at"])})
         asks = []
@@ -945,7 +947,7 @@ def state(store, rid: str, online=None, now: float | None = None) -> dict:
             for q in db.execute("SELECT rid, at FROM crew_req WHERE crew = ? AND kind = 'ask' ORDER BY at", (crew,)):
                 p = progress.row_of(db, q["rid"])
                 cre = db.execute("SELECT creature FROM players WHERE rid = ?", (q["rid"],)).fetchone()
-                asks.append({"fid": p["fid"], "nick": progress.nick_of(p), "lvl": int(p["lvl"]), "cre": cre["creature"] if cre else None})
+                asks.append({"fid": p["fid"], "nick": progress.nick_of(p, db), "lvl": int(p["lvl"]), "cre": cre["creature"] if cre else None})
         day = int(now // 86400)
         held = war.held_by(db, crew)
         base.update({

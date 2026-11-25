@@ -37,6 +37,7 @@ locate (24.11, аудит L-4): точное место и здание — то
   сервер → who {q, ps}; friends {q, ps, req}; friend {e: req|added|removed, …}; locate {q, id, ok, x, y, z, inside, m, exact}
            (не друг — клетка WHO_GRID, inside: null; друг в другом городе — ok: false, city);
            race {e: go|cp|done|dq, …}; room {e: invite|state|start|pos|catch|end|gone|left, …}; coop {e: van|phase, …}
+           Имя игрока для других — name (shown: свой ник из nicks.py или ник из «Рейтинга»; гость без ника — null).
 HTTP: GET /g/races, /g/districts, /g/admin/winners (заголовок X-Admin-Key).
 """
 from __future__ import annotations
@@ -54,6 +55,8 @@ import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request, Response
+
+import nicks
 
 HERE = Path(__file__).resolve().parent
 
@@ -98,6 +101,14 @@ def _load_tracks() -> dict:
 
 TRACKS = _load_tracks()
 BY_ID = {t["id"]: t for t in TRACKS["tracks"]}
+
+
+def shown(c) -> str | None:
+    """Как игрока в онлайне видят другие: свой ник (nicks.py), у вошедшего без своего — ник из «Рейтинга»; гость без
+    ника — None (клиент пишет «Гость»)."""
+    if c is None:
+        return None
+    return getattr(c, "name", None) or (None if getattr(c, "guest", True) else getattr(c, "pnick", None))
 
 
 def week_of(ts: float | None = None) -> int:
@@ -311,11 +322,11 @@ class Modes:
     def board(self, tid: str, weekly: bool, n: int = 10) -> list[dict]:
         w = week_of()
         cond, args = ("AND r.week = ?", (tid, w)) if weekly else ("", (tid,))
-        rows = self.q(f"""SELECT r.rid, min(r.ms) AS ms, max(r.creature) AS creature FROM races r
-                          LEFT JOIN honest h ON h.rid = r.rid
+        rows = self.q(f"""SELECT r.rid, min(r.ms) AS ms, max(r.creature) AS creature, max(n.nick) AS name FROM races r
+                          LEFT JOIN honest h ON h.rid = r.rid LEFT JOIN nicks n ON n.rid = r.rid
                           WHERE r.track = ? {cond} AND COALESCE(h.cheat, 0) < ?
                           GROUP BY r.rid ORDER BY ms LIMIT ?""", args + (CHEAT_TOP, n))
-        return [{"creature": x["creature"], "ms": int(x["ms"])} for x in rows]
+        return [{"creature": x["creature"], "name": x["name"], "ms": int(x["ms"])} for x in rows]
 
     def close_weeks(self) -> None:
         """Итоги прошедших недель (до 8 назад), которых ещё нет: тройка трассы недели — в weekly_winners."""
@@ -517,7 +528,7 @@ class Modes:
         for cid in R["members"]:
             c = self.clients.get(cid)
             if c:
-                ps.append({"id": cid, "nick": c.nick, "creature": c.creature, "role": R["roles"].get(cid)})
+                ps.append({"id": cid, "nick": c.nick, "name": shown(c), "creature": c.creature, "role": R["roles"].get(cid)})
         return {"t": "room", "e": "state", "room": R["id"], "kind": R["kind"], "host": R["host"], "phase": R["phase"],
                 "players": ps, "max": ROOM_MAX[R["kind"]]}
 
@@ -547,7 +558,7 @@ class Modes:
             self.rooms[rid] = R
             self.room_of[c.id] = rid
             await self.send(c, self._room_state(R))
-            inv = {"t": "room", "e": "invite", "room": rid, "kind": kind, "host": c.nick, "n": 1}
+            inv = {"t": "room", "e": "invite", "room": rid, "kind": kind, "host": shown(c) or c.nick, "n": 1}
             for oid in list(c.vis):
                 o = self.clients.get(oid)
                 if o and oid not in self.room_of:
@@ -818,7 +829,7 @@ class Modes:
             for o in list(self.clients.values()):
                 if not o.state or getattr(o, "closed", False):
                     continue
-                ps.append({"id": o.id, "creature": o.creature, "guest": o.guest, "me": o is c, "city": getattr(o, "city", "flame"),
+                ps.append({"id": o.id, "creature": o.creature, "name": shown(o), "guest": o.guest, "me": o is c, "city": getattr(o, "city", "flame"),
                            "fid": None if o.guest else self.fid(o.rid), "lvl": getattr(o, "lvl", None), "tag": getattr(o, "ctag", None),
                            "x": round(o.state[0] / WHO_GRID) * WHO_GRID, "z": round(o.state[2] / WHO_GRID) * WHO_GRID,
                            "m": o.state[4], "friend": o.rid in fr})
@@ -864,19 +875,22 @@ class Modes:
                               (c.rid, FRIEND_MAX))
                 req = self.q("""SELECT r.frm AS rid, p.creature FROM friend_req r LEFT JOIN players p ON p.rid = r.frm
                                 WHERE r.dst = ? ORDER BY r.at DESC LIMIT 20""", (c.rid,))
-                return rows, req
-            rows, req = await asyncio.to_thread(load)
+                st = self.db()
+                with st.lock:                               # как их видят другие: свой ник или ник из «Рейтинга»
+                    names = {r["rid"]: nicks.shown(st.db, r["rid"]) for r in list(rows) + list(req)}
+                return rows, req, names
+            rows, req, names = await asyncio.to_thread(load)
             ps = []
             for r in rows:
                 o = self._by_rid(r["rid"])
                 ps.append({"fid": self.fid(r["rid"]), "creature": (o.creature if o else None) or r["creature"],
-                           "online": bool(o and o.state), "id": o.id if o else None, "city": getattr(o, "city", None) if o else None,
+                           "name": (shown(o) if o else None) or names.get(r["rid"]), "online": bool(o and o.state), "id": o.id if o else None, "city": getattr(o, "city", None) if o else None,
                            "seen": None if o else (int(time.time()) - int(r["updated_at"])) // 3600 if r["updated_at"] else None})
             rq = []
             for r in req:
                 o = self._by_rid(r["rid"])
                 rq.append({"fid": self.fid(r["rid"]), "creature": (o.creature if o else None) or r["creature"],
-                           "id": o.id if o else None})
+                           "name": (shown(o) if o else None) or names.get(r["rid"]), "id": o.id if o else None})
             await self.send(c, {"t": "friends", "q": q, "ps": ps, "req": rq})
             return True
         if t == "friend":
@@ -926,11 +940,12 @@ class Modes:
                     return "sent"
             res = await asyncio.to_thread(add)
             if res == "added":
-                await self.send(c, {"t": "friend", "e": "added", "id": o.id, "creature": o.creature})
-                await self.send(o, {"t": "friend", "e": "added", "id": c.id, "creature": c.creature})
+                await self.send(c, {"t": "friend", "e": "added", "id": o.id, "creature": o.creature, "name": shown(o)})
+                await self.send(o, {"t": "friend", "e": "added", "id": c.id, "creature": c.creature, "name": shown(c)})
             elif res == "sent":
                 await self.send(c, {"t": "friend", "e": "sent", "id": o.id})
-                await self.send(o, {"t": "friend", "e": "req", "id": c.id, "creature": c.creature, "fid": self.fid(c.rid)})
+                await self.send(o, {"t": "friend", "e": "req", "id": c.id, "creature": c.creature, "name": shown(c),
+                                    "fid": self.fid(c.rid)})
             else:
                 await self.send(c, {"t": "friend", "e": "err", "why": "вы уже друзья" if res == "already" else "друзей уже 100"})
             return True
@@ -954,9 +969,9 @@ class Modes:
             if await asyncio.to_thread(answer) and a == "accept":
                 o = o or self._by_rid(frm)
                 await self.send(c, {"t": "friend", "e": "added", "id": o.id if o else None,
-                                    "creature": o.creature if o else None})
+                                    "creature": o.creature if o else None, "name": shown(o) if o else None})
                 if o:
-                    await self.send(o, {"t": "friend", "e": "added", "id": c.id, "creature": c.creature})
+                    await self.send(o, {"t": "friend", "e": "added", "id": c.id, "creature": c.creature, "name": shown(c)})
             return True
         if a == "remove":
             rid = await asyncio.to_thread(rid_by_fid, m.get("fid"))
@@ -1030,11 +1045,13 @@ class Modes:
             resp.headers["Cache-Control"] = "public, max-age=20"
             w = week_of()
             wt = week_track(w)
-            last = modes.q("SELECT place, ms, creature, track FROM weekly_winners WHERE week = ? AND place > 0 ORDER BY place",
+            last = modes.q("""SELECT w.place, w.ms, w.creature, w.track, n.nick FROM weekly_winners w
+                              LEFT JOIN nicks n ON n.rid = w.rid WHERE w.week = ? AND w.place > 0 ORDER BY w.place""",
                            (w - 1,))
             return {"week": w, "weekly": wt["id"] if wt else None, "ends_in": week_ends_in(),
                     "boards": {t["id"]: modes.board(t["id"], bool(wt and wt["id"] == t["id"]), 10) for t in TRACKS["tracks"]},
-                    "last": [{"place": x["place"], "ms": x["ms"], "creature": x["creature"], "track": x["track"]} for x in last]}
+                    "last": [{"place": x["place"], "ms": x["ms"], "creature": x["creature"], "name": x["nick"], "track": x["track"]}
+                             for x in last]}
 
         @rt.get("/g/districts")
         def districts(resp: Response):

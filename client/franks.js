@@ -134,7 +134,8 @@
     }).join("") + "</select></div>";
     var locked = (me.titles || []).filter(function (t) { return !t.got; }).slice(0, 6);
     if (locked.length) html += "<p class='quiet'>Ещё не открыты: " + locked.map(function (t) { return esc(t.name) + (t.lvl ? " (" + t.lvl + ")" : ""); }).join(", ") + "</p>";
-    html += "<div class='row'><span>Ник: <b>" + esc(me.nick) + "</b></span><button type='button' class='ghost' data-rk-nick='1'>сменить</button></div>";
+    html += "<div class='row'><span>Ник: <b>" + esc(me.nick) + "</b></span><span>" + (FC.nick ? "<button type='button' data-rk-own='1'>сменить</button> " : "") +
+      (me.name && FC.nick ? "" : "<button type='button' class='ghost' data-rk-nick='1'>" + (FC.nick ? "из списка" : "сменить") + "</button>") + "</span></div>";
     // что откроется дальше
     var next = [];
     for (var l = me.lvl + 1; l <= me.lvl + 30 && next.length < 4; l++) G.unlocks(l).forEach(function (u) { if (next.length < 4) next.push("ур. " + l + " — " + u.icon + " " + u.text); });
@@ -148,7 +149,13 @@
       FC.prop.post("/g/prog/title", { token: token(), title: ts.value }).then(function (d) { FC.hud.toast("Титул: " + d.title, "ok", 2); G.refresh(true).then(ctl.refresh); })
         .catch(function (e) { FC.hud.toast(e.message, "bad", 3); });
     });
-    b.querySelector("[data-rk-nick]").addEventListener("click", function () { S.tab = "nick"; ctl.refresh(); });
+    var rn = b.querySelector("[data-rk-nick]");
+    if (rn) rn.addEventListener("click", function () { S.tab = "nick"; ctl.refresh(); });
+    var ro = b.querySelector("[data-rk-own]");
+    if (ro) ro.addEventListener("click", function () {
+      FC.nick.open();
+      var off = FC.on("nick", function () { off(); if (document.body.contains(b)) FC.progress.refresh(true).then(ctl.refresh); });
+    });
   }
   var NICKS = ["Комета", "Искра", "Вектор", "Сокол", "Байт", "Гром", "Вираж", "Неон", "Турбо", "Зубр", "Барс", "Рысь", "Кедр",
     "Янтарь", "Метеор", "Призрак", "Тайфун", "Форсаж", "Драйв", "Кадр", "Ритм", "Пиксель", "Шторм", "Ветер", "Факел", "Дрифт",

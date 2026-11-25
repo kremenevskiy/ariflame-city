@@ -179,7 +179,8 @@ def season(store, city: str, now: float | None = None) -> dict:
         pts: dict[str, dict[str, float]] = {}
         for r in db.execute("SELECT dist, team, pts FROM season_pts WHERE week = ? AND city = ?", (wk, city)).fetchall():
             pts.setdefault(r["dist"], {})[r["team"]] = round(float(r["pts"]))
-        top = db.execute("""SELECT m.team, m.pts, p.creature FROM season_me m LEFT JOIN players p ON p.rid = m.rid
+        top = db.execute("""SELECT m.team, m.pts, p.creature, n.nick FROM season_me m LEFT JOIN players p ON p.rid = m.rid
+                            LEFT JOIN nicks n ON n.rid = m.rid
                             WHERE m.week = ? AND m.city = ? ORDER BY m.pts DESC LIMIT 10""", (wk, city)).fetchall()
         members = {r["team"]: int(r["n"]) for r in db.execute(
             "SELECT team, count(*) AS n FROM season_team WHERE city = ? GROUP BY team", (city,)).fetchall()}
@@ -193,7 +194,7 @@ def season(store, city: str, now: float | None = None) -> dict:
                       "pts": round(sum(p.get(t, 0) for p in pts.values())), "members": members.get(t, 0),
                       "can": contestable(city, t, holders), "home": HOME[city][t]})
     return {"city": city, "week": wk, "ends_in": modes.week_ends_in(now), "dists": dists, "teams": teams,
-            "top": [{"team": r["team"], "pts": round(float(r["pts"])), "creature": r["creature"]} for r in top],
+            "top": [{"team": r["team"], "pts": round(float(r["pts"])), "creature": r["creature"], "name": r["nick"]} for r in top],
             "bonus": HOLD_BONUS, "acts": ACT_PTS, "day_cap": ACT_DAY}
 
 

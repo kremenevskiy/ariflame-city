@@ -5,15 +5,16 @@
 - Личность (README «Личность»): по умолчанию все — гости «g-…» (FC_WORLD не задан). Вход через внешний аккаунт —
   вебхук: токен клиента один раз проверяет внешний сервис (`POST {FC_WORLD}/w/me {token}` → `{rid}`), ответ кэшируется
   на 10 минут; ключей у нас нет. FC_WORLD=fake — локальная проверка и тесты: токен «tok-<rid>» = rid.
-- Наружу — только номер соединения, ник из рейтинга и код облика. rid другим игрокам не уходит никогда: он связал бы
-  игрока с его домом на карте.
+- Наружу — только номер соединения, свой ник игрока (nicks.py) или ник из рейтинга и код облика. rid другим игрокам не
+  уходит никогда: он связал бы игрока с его домом на карте.
 - Свободного текста нет: эмоции — номер из готового списка EMO (мат и спам невозможны по построению).
 
 Протокол (JSON-кадры WebSocket /g/ws, поле t — тип):
-  клиент → hi {token?, guest?, creature, v}; s {p:[x,y,z,h], m, c, k, b, a, w} до 10 Гц; emo {k}
-  сервер → welcome {id, online, guest, emo}; w {ts, ps:[[id,x,y,z,h,m,c,k,b,a,w],…], x:[ушли], meta:[{id,creature,
-           nick,guest}]} 10 Гц — только ближние (радиус RADIUS, внутри здания — только то же здание); leave {id};
-           emo {id, k}; online {n}
+  клиент → hi {token?, guest?, creature, v, nick?}; s {p:[x,y,z,h], m, c, k, b, a, w} до 10 Гц; emo {k}; nick {nick}
+  сервер → welcome {id, online, guest, emo, name}; w {ts, ps:[[id,x,y,z,h,m,c,k,b,a,w],…], x:[ушли], meta:[{id,creature,
+           nick,guest,name?}]} 10 Гц — только ближние (радиус RADIUS, внутри здания — только то же здание); leave {id};
+           emo {id, k}; online {n}; nick {ok, nick | why, wait?}
+  Ник (nicks.py, 25.11.2026): свой — name (проверяет и хранит сервер); hi.nick — копия с устройства для пустой записи.
   m: 0 пешком, 1 в машине, 2 внутри, 3 в воздухе (c — тип аппарата fair.js), 4 под парашютом; c — тип машины;
   k — цвет; b — здание; a — анимация; w — звёзды розыска. Воздух — шире границы (±AIR_LIM, до AIR_Y м).
 HTTP: GET /g/health, /g/stats, /g/top; POST /g/save {token, save, creature?}, /g/load {token}.
@@ -54,6 +55,7 @@ import events as fcevents  # noqa: E402 — календарь недели (/g/
 import contrib  # noqa: E402 — правки без GitHub (/g/contrib → contrib-intake.yml открывает PR)
 import errors as fcerrors  # noqa: E402 — ошибки у игроков и сервера (/g/err, /g/admin/errors)
 import traceback  # noqa: E402
+import nicks  # noqa: E402 — ник игрока: проверка, хранение, лимиты смен
 
 # Имена кодов облика (необязательный набор видов). Пусто — ники «Игрок»/«Гость».
 CREATURE_NAMES: dict[str, str] = {}
@@ -137,6 +139,7 @@ class Store:
             """)
             # сессии старше 60 дней — не нужны никому (нагрузка на диск без пользы)
             self.db.execute("DELETE FROM sessions WHERE started_at < ?", (int(time.time()) - 60 * 86400,))
+            nicks.ensure(self.db)                            # ники игроков (и гостей) — своя таблица
 
     def touch(self, rid: str, creature: str | None):
         now = int(time.time())
@@ -182,10 +185,11 @@ class Store:
     def top(self, n: int = 20) -> list[dict]:
         with self.lock:
             # только честные: игрок с откатами сохранений (modes.check_save, cheat ≥ CHEAT_TOP) в топ не попадает
-            rows = self.db.execute("""SELECT creature, money, playmin FROM players WHERE money > 0
-                                      AND rid NOT IN (SELECT rid FROM honest WHERE cheat >= ?)
-                                      ORDER BY money DESC LIMIT ?""", (fcmodes.CHEAT_TOP, n)).fetchall()
-        return [{"creature": r["creature"], "name": CREATURE_NAMES.get(r["creature"] or "", "Игрок"),
+            rows = self.db.execute("""SELECT p.creature, p.money, p.playmin, n.nick FROM players p
+                                      LEFT JOIN nicks n ON n.rid = p.rid WHERE p.money > 0
+                                      AND p.rid NOT IN (SELECT rid FROM honest WHERE cheat >= ?)
+                                      ORDER BY p.money DESC LIMIT ?""", (fcmodes.CHEAT_TOP, n)).fetchall()
+        return [{"creature": r["creature"], "name": r["nick"] or CREATURE_NAMES.get(r["creature"] or "", "Игрок"),
                  "earned": int(r["money"]), "playmin": round(float(r["playmin"]))} for r in rows]
 
 
@@ -320,7 +324,7 @@ async def verify(token: str) -> str | None:
 
 class Client:
     __slots__ = ("ws", "id", "rid", "guest", "creature", "nick", "state", "vis", "known", "bucket", "bucket_t", "bad",
-                 "last", "emo_t", "sess", "jumps", "closed", "city", "lvl", "fid", "ctag", "ccol", "pnick")
+                 "last", "emo_t", "sess", "jumps", "closed", "city", "lvl", "fid", "ctag", "ccol", "pnick", "name")
 
     def __init__(self, ws: WebSocket, cid: int, rid: str, guest: bool, creature: str | None):
         self.ws, self.id, self.rid, self.guest, self.creature = ws, cid, rid, guest, creature
@@ -337,9 +341,18 @@ class Client:
         self.jumps: list[float] = []
         self.closed = False
         self.lvl = self.fid = self.ctag = self.ccol = self.pnick = None   # уровень, профиль, клан (progress, crews)
+        self.name: str | None = None            # свой ник (nicks.py); есть — он же nick для комнат режимов
+
+    def set_name(self, name: str | None) -> None:
+        self.name = name or None
+        self.nick = self.name or CREATURE_NAMES.get(self.creature or "") or ("Гость" if self.guest else "Игрок")
+        if self.name and self.fid:
+            self.pnick = self.name                          # табличка вошедшего — тоже свой ник (progress.nick_of)
 
     def meta(self) -> dict:
         m = {"id": self.id, "creature": self.creature, "nick": self.nick, "guest": self.guest}
+        if self.name:
+            m["name"] = self.name
         if self.fid:                                         # табличка: ник, уровень, тег клана; fid — карточка игрока
             m.update({"fid": self.fid, "lvl": self.lvl, "pn": self.pnick, "tag": self.ctag, "ccol": self.ccol})
         return m
@@ -460,6 +473,37 @@ async def on_emo(c: Client, m: dict) -> bool:
     msg = json.dumps({"t": "emo", "id": c.id, "k": int(k)}, separators=(",", ":"))
     for o in [c] + [clients[i] for i in list(c.vis) if i in clients]:
         await send(o, msg)
+    return True
+
+
+def _nick_hi(rid: str, text) -> str | None:
+    st = db()
+    with st.lock:
+        return nicks.on_hi(st.db, rid, text if isinstance(text, str) and len(text) <= 80 else None)
+
+
+def _nick_change(rid: str, text: str) -> dict:
+    st = db()
+    with st.lock:
+        return nicks.change(st.db, rid, text)
+
+
+async def on_nick(c: Client, m: dict) -> bool:
+    """Свой ник: проверка и лимиты — nicks.change; сменился — соседи получат его в meta на следующем кадре рассылки."""
+    text = m.get("nick")
+    if not isinstance(text, str) or len(text) > 80:
+        return False                                         # не строка или простыня — не наш клиент
+    try:
+        res = await asyncio.to_thread(_nick_change, c.rid, text)
+    except sqlite3.Error:
+        log.exception("ник %s не записался", c.id)
+        res = {"ok": False, "why": "Не сохранилось — попробуй ещё раз"}
+    changed = res.pop("changed", False)
+    await send(c, dict(res, t="nick"))
+    if res.get("ok") and changed:
+        c.set_name(res["nick"])
+        for o in list(clients.values()):
+            o.known.discard(c.id)                            # tick пришлёт meta с новым ником всем, кто рядом
     return True
 
 
@@ -622,6 +666,7 @@ async def ws_endpoint(ws: WebSocket):
     peak = max(peak, len(clients))
     try:
         c.sess = await asyncio.to_thread(db().session_start, rid, guest)
+        c.set_name(await asyncio.to_thread(_nick_hi, rid, hi.get("nick")))
         if not guest:
             await asyncio.to_thread(db().touch, rid, cre)
             await _fill_meta(c)
@@ -630,7 +675,7 @@ async def ws_endpoint(ws: WebSocket):
     except sqlite3.Error:
         log.exception("база игры не записала сессию")
     await send(c, {"t": "welcome", "id": c.id, "online": len(clients), "guest": guest, "emo": EMO, "modes": 1,
-                   "fid": c.fid, "lvl": c.lvl, "tag": c.ctag})
+                   "fid": c.fid, "lvl": c.lvl, "tag": c.ctag, "name": c.name})
     try:
         while not c.closed:
             msg = await ws.receive()
@@ -659,6 +704,8 @@ async def ws_endpoint(ws: WebSocket):
                         ok = on_state(c, m)
                     elif t == "emo":
                         ok = await on_emo(c, m)
+                    elif t == "nick":
+                        ok = await on_nick(c, m)
                     elif t == "ping":
                         ok = True
                     elif t == "race":
@@ -823,6 +870,7 @@ async def _fill_meta(c: Client) -> None:
         log.exception("профиль %s", c.rid)
         return
     c.fid, c.lvl, c.pnick, c.ctag, c.ccol = m["fid"], m["lvl"], m["nick"], m["tag"], m["ccol"]
+    c.set_name(c.name)                                       # свой ник поверх ника из «Рейтинга»
 
 
 async def refresh_meta(rids) -> None:

@@ -52,6 +52,8 @@ import modes as fcmodes  # noqa: E402
 import media  # noqa: E402 — кадры фоторежима (/g/photo, /g/p/<id>)
 import events as fcevents  # noqa: E402 — календарь недели (/g/events)
 import contrib  # noqa: E402 — правки без GitHub (/g/contrib → contrib-intake.yml открывает PR)
+import errors as fcerrors  # noqa: E402 — ошибки у игроков и сервера (/g/err, /g/admin/errors)
+import traceback  # noqa: E402
 
 # Имена кодов облика (необязательный набор видов). Пусто — ники «Игрок»/«Гость».
 CREATURE_NAMES: dict[str, str] = {}
@@ -527,8 +529,9 @@ async def ticker():
         t0 = time.monotonic()
         try:
             await tick()
-        except Exception:                                   # noqa: BLE001 — рассылка не должна умирать
+        except Exception as e:                              # noqa: BLE001 — рассылка не должна умирать
             log.exception("кадр рассылки упал")
+            fcerrors.record_server(db(), "tick", e, traceback.format_exc())
         await asyncio.sleep(max(0.01, TICK - (time.monotonic() - t0)))
 
 
@@ -556,7 +559,11 @@ async def limit_body(request: Request, call_next):
     cap = media.PHOTO_MAX + 4096 if path == "/g/photo" else contrib.BODY_MAX if path == "/g/contrib" else SAVE_MAX + 8192
     if n and n.isdigit() and int(n) > cap:
         return Response('{"detail":"слишком большой запрос"}', status_code=413, media_type="application/json")
-    return await call_next(request)
+    try:
+        return await call_next(request)
+    except Exception as e:                                  # noqa: BLE001 — необработанное: в сводку ошибок (errors.py), дальше 500
+        fcerrors.record_server(db(), path, e, traceback.format_exc())
+        raise
 
 
 _hello = [0]                  # сокеты от accept до hi (и проверки токена) — тоже занимают место под MAX_CONN
@@ -671,10 +678,18 @@ async def ws_endpoint(ws: WebSocket):
                 if c.bad > BAD_LIMIT:
                     await kick(c, 4008)
                     break
-    except Exception:                                       # noqa: BLE001 — обрыв посреди кадра
-        pass
+    except Exception as e:                                  # noqa: BLE001 — обрыв посреди кадра
+        # разрыв связи — обычное дело; остальное — настоящая ошибка сервера, в сводку ошибок (errors.py)
+        if not _disconnect(e):
+            fcerrors.record_server(db(), "/g/ws", e, traceback.format_exc())
     finally:
         await drop(c)
+
+
+def _disconnect(e: BaseException) -> bool:
+    n = type(e).__name__
+    return n in ("WebSocketDisconnect", "ClientDisconnected", "CancelledError") or n.startswith("ConnectionClosed") or \
+        (isinstance(e, RuntimeError) and "close" in str(e).lower())
 
 
 # --------------------------------------------------------------------------
@@ -786,6 +801,9 @@ app.include_router(realty.make_router(db, verify, _body, where, MODES))
 PHOTOS = os.environ.get("FC_PHOTOS") or os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "photos")
 app.include_router(media.make_router(verify, lambda: PHOTOS))
 app.include_router(fcevents.router())
+# Ошибки у игроков (client/ferr.js) и необработанные исключения сервера — сводка по отпечаткам в той же базе (errors.py)
+app.include_router(fcerrors.make_router(db, fcmodes.admin_key))
+
 # Правки без GitHub (страница contribute.html и навык для ИИ): очередь — папка contrib/ рядом с базой (FC_CONTRIB — своя),
 # забирает её GitHub Actions по ключу FC_CONTRIB_KEY (contrib.py, .github/workflows/contrib-intake.yml).
 CONTRIB_DIR = os.environ.get("FC_CONTRIB") or os.path.join(os.path.dirname(os.path.abspath(DB_PATH)), "contrib")

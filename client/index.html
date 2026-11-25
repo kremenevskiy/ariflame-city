@@ -302,6 +302,8 @@ body.busted #cv{filter:grayscale(.7) sepia(.3) hue-rotate(180deg) brightness(.85
 <div id="bubbles"></div>
 <div id="hud"></div>
 <div id="loader"></div>
+<!-- Ошибки у игроков (FC.err) — самым первым: ловит и падения при загрузке модулей; шлёт на свой же сервер /g/err. -->
+<script src="ferr.js"></script>
 <!-- Экран загрузки и выбор города (window.FC_CITY) — до всего остального: его видно, пока грузятся движок и модули. -->
 <script src="floader.js"></script>
 <!-- Настройки развёртывания (сервер, вход, ссылки) — config.js; его заменяют при выкладке (docs/DEPLOY.md). -->

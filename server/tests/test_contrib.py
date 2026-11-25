@@ -1,6 +1,7 @@
-"""Правки без GitHub (server/contrib.py): приём правки с сайта, статус по ссылке, очередь для contrib-intake.yml.
+"""Правки без GitHub (server/contrib.py): приём правки с сайта, статус по ссылке, очередь для contrib-intake.yml;
+необязательная почта и письма о статусе (server/contribmail.py).
 
-Без сети: база и папка очереди — во временной папке, ключ очереди — тестовый.
+Без сети: база и папка очереди — во временной папке, ключи очереди и админки — тестовые.
 
     python -m pytest server/tests/test_contrib.py -q
 """
@@ -9,6 +10,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import io
+import json
 import os
 import tempfile
 import zipfile
@@ -27,10 +29,16 @@ _spec = importlib.util.spec_from_file_location("fcg_app_contrib", GAME / "app.py
 fcg = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(fcg)
 import contrib  # noqa: E402  — app.py кладёт папку службы в sys.path
+import contribmail  # noqa: E402
 
 from fastapi.testclient import TestClient  # noqa: E402
 
 KEY = "test-contrib-key-0123456789"
+ADMIN_KEY = "test-admin-key-contrib-mail"
+H = {"X-Contrib-Key": KEY}
+ADMIN = {"X-Admin-Key": ADMIN_KEY}
+EMAIL = "vasya.pupkin+city@gmail.com"
+PR_URL = "https://github.com/kremenevskiy/ariflame-city/pull/7"
 PATCH = """diff --git a/client/fstory.js b/client/fstory.js
 --- a/client/fstory.js
 +++ b/client/fstory.js
@@ -59,7 +67,10 @@ def zipb64(files: dict[str, str | bytes]) -> str:
 def client(monkeypatch):
     contrib._hits.clear()
     contrib._total.clear()
+    contribmail._mail_hits.clear()
     monkeypatch.setenv("FC_CONTRIB_KEY", KEY)
+    monkeypatch.setenv("FC_ADMIN_KEY", ADMIN_KEY)
+    monkeypatch.delenv("FC_SITE", raising=False)
     with TestClient(fcg.app) as c:
         yield c
 
@@ -167,3 +178,191 @@ def test_rate_limit_ignores_spoofed_forwarded_for(client):
 def test_unknown_id_404(client):
     assert client.get("/g/contrib/AAAAAAAAAAAA").status_code == 404
     assert client.get("/g/contrib/..%2F..%2Fgame").status_code == 404
+
+
+# ---- почта и письма о статусе (contribmail.py) -----------------------------------------------------------------------
+
+def send(client, **kw) -> str:
+    r = client.post("/g/contrib", json=base(patch=PATCH, **kw))
+    assert r.status_code == 200, r.text
+    return r.json()["id"]
+
+
+def move(client, cid, status, **kw):
+    return client.post(f"/g/contrib/{cid}/result", json={"status": status, **kw}, headers=H)
+
+
+def mails(client, cid) -> list[dict]:
+    r = client.get("/g/admin/contrib/outbox", headers=ADMIN)
+    assert r.status_code == 200, r.text
+    return [m for m in r.json()["items"] if m["cid"] == cid]
+
+
+def mail_row(cid):
+    st = fcg.db()
+    with st.lock:
+        return st.db.execute("SELECT email FROM contrib_mail WHERE cid = ?", (cid,)).fetchone()
+
+
+def test_email_stays_on_server(client):
+    """Почта не уходит ни в статус, ни в очередь для GitHub Actions, ни в файл очереди, ни в список для сверки PR."""
+    r = client.post("/g/contrib", json=base(patch=PATCH, email="  Vasya.Pupkin+City@Gmail.COM "))
+    assert r.status_code == 200 and r.json()["notify"] is True
+    cid = r.json()["id"]
+    assert mail_row(cid)["email"] == EMAIL                                    # строчными, без пробелов
+    assert EMAIL not in client.get(f"/g/contrib/{cid}").text
+    assert EMAIL not in client.get("/g/contrib/pending", headers=H).text
+    with open(os.path.join(os.environ["FC_CONTRIB"], cid + ".json"), encoding="utf-8") as f:
+        assert EMAIL not in f.read()
+    assert move(client, cid, "pr", pr_url=PR_URL).status_code == 200
+    w = client.get("/g/contrib/watch", headers=H).text
+    assert cid in w and EMAIL not in w and "vasya" not in w                   # ни почты, ни автора
+
+
+@pytest.mark.parametrize("bad", ["vasya", "a@b", "a b@c.com", "a@b.com,c@d.com", "a@b.com\nbcc: z@w.com", "<a@b.com>",
+                                 "a..b@c.com", ".a@c.com", "a.@c.com", "a%b@c.com", "вася@почта.рф", "a@-b.com",
+                                 "x" * 110 + "@gmail.com", "a@" + "b" * 60 + "." + "c" * 60 + ".com", 12345, ["a@b.com"]])
+def test_bad_email_rejected(client, bad):
+    r = client.post("/g/contrib", json=base(patch=PATCH, email=bad))
+    assert r.status_code == 400, (bad, r.text)
+
+
+def test_no_email_no_mail(client):
+    r = client.post("/g/contrib", json=base(patch=PATCH, email=""))
+    assert r.json()["notify"] is False
+    cid = r.json()["id"]
+    assert move(client, cid, "pr", pr_url=PR_URL).status_code == 200
+    assert move(client, cid, "live").status_code == 200
+    assert mails(client, cid) == [] and mail_row(cid) is None
+
+
+def test_flow_to_live_sends_three_mails_then_erases(client):
+    cid = send(client, email=EMAIL)
+    assert move(client, cid, "taken").status_code == 200
+    assert mails(client, cid) == []                                          # «забрали» — без письма
+    assert move(client, cid, "pr", pr_url=PR_URL).status_code == 200
+    assert move(client, cid, "pr", pr_url=PR_URL).status_code == 200          # повтор отчёта — письмо не задваивается
+    assert move(client, cid, "merged").status_code == 200
+    assert move(client, cid, "live").status_code == 200
+    assert client.get(f"/g/contrib/{cid}").json()["status"] == "live"
+    ms = mails(client, cid)
+    assert [m["status"] for m in ms] == ["pr", "merged", "live"] and all(m["to"] == EMAIL for m in ms)
+    live = ms[-1]
+    assert live["subject"] == "Флейм-Сити: твоя правка «Скамейки на бульваре» в городе"
+    assert "Привет, vasya!" in live["text"] and "https://city.ariflame.com/" in live["text"] and PR_URL in live["text"]
+    assert "<a href=" in live["html"] and "<script" not in live["html"]
+    assert "@vasya_tg" not in json.dumps(ms)                                  # контакт — не в письма
+    assert client.get("/g/admin/contrib/outbox").status_code == 404           # без ключа админки
+    assert client.post(f"/g/admin/contrib/outbox/{ms[0]['mid']}/sent", headers={"X-Admin-Key": "nope"}).status_code == 404
+    # письмо о PR ушло — адрес правки ещё нужен; ушло письмо об окончательном статусе — стёрт
+    assert client.post(f"/g/admin/contrib/outbox/{ms[0]['mid']}/sent", headers=ADMIN).json() == {"ok": True, "erased": False}
+    assert mail_row(cid) is not None
+    assert client.post(f"/g/admin/contrib/outbox/{ms[1]['mid']}/sent", headers=ADMIN).json()["erased"] is False
+    assert client.post(f"/g/admin/contrib/outbox/{live['mid']}/sent", json={"result": "sent"}, headers=ADMIN).json()["erased"] is True
+    assert mail_row(cid) is None and mails(client, cid) == []
+    again = client.post(f"/g/admin/contrib/outbox/{live['mid']}/sent", headers=ADMIN).json()
+    assert again["already"] is True                                           # повтор отметки — не ошибка
+    st = fcg.db()
+    with st.lock:
+        rows = st.db.execute("SELECT rcpt FROM contrib_outbox WHERE cid = ?", (cid,)).fetchall()
+    assert rows and all(r["rcpt"] is None for r in rows)                      # у отправленных адреса нет
+    assert client.post("/g/admin/contrib/outbox/999999/sent", headers=ADMIN).status_code == 404
+
+
+def test_live_straight_from_pr_is_one_mail(client):
+    """Влили и выкатили между двумя обходами intake — одно письмо «в городе», без «приняли»."""
+    cid = send(client, email=EMAIL)
+    move(client, cid, "pr", pr_url=PR_URL)
+    assert move(client, cid, "live").status_code == 200
+    assert [m["status"] for m in mails(client, cid)] == ["pr", "live"]
+
+
+def test_rejected_and_closed_mails_carry_reason(client):
+    cid = send(client, email=EMAIL)
+    assert move(client, cid, "rejected", reason="правка (git diff) не накладывается на свежую версию игры.").status_code == 200
+    m = mails(client, cid)[0]
+    assert "не прошла проверку" in m["subject"] and "Почему: правка (git diff) не накладывается на свежую версию игры." in m["text"]
+    assert "contribute.html" in m["text"]
+    cid2 = send(client, email=EMAIL)
+    move(client, cid2, "pr", pr_url=PR_URL)
+    assert move(client, cid2, "closed", reason="Уже есть похожая правка #5").status_code == 200
+    m2 = mails(client, cid2)[-1]
+    assert m2["status"] == "closed" and "пока не взяли" in m2["subject"] and "Уже есть похожая правка #5" in m2["text"]
+    assert client.get(f"/g/contrib/{cid2}").json()["reason"] == "Уже есть похожая правка #5"
+
+
+def test_bounced_erases_address_and_drops_other_mails(client):
+    cid = send(client, email=EMAIL)
+    move(client, cid, "pr", pr_url=PR_URL)
+    move(client, cid, "merged")
+    first, second = mails(client, cid)
+    r = client.post(f"/g/admin/contrib/outbox/{first['mid']}/sent", json={"result": "bounced"}, headers=ADMIN)
+    assert r.json()["erased"] is True
+    assert mail_row(cid) is None and mails(client, cid) == []                 # второе письмо на мёртвый адрес — тоже снято
+    assert move(client, cid, "live").status_code == 200 and mails(client, cid) == []
+    assert client.post(f"/g/admin/contrib/outbox/{second['mid']}/sent", json={"result": "lost"}, headers=ADMIN).status_code == 400
+
+
+@pytest.mark.parametrize("path", [["pr", "pending"], ["pr", "taken"], ["pending", "merged"], ["pending", "live"],
+                                  ["pr", "merged", "closed"], ["pr", "merged", "pr"], ["rejected", "pending"],
+                                  ["pr", "live", "merged"], ["pr", "closed", "merged"]])
+def test_status_transitions_guarded(client, path):
+    cid = send(client)
+    for st in path[:-1]:
+        assert move(client, cid, st, pr_url=PR_URL).status_code == 200, st
+    assert move(client, cid, path[-1], pr_url=PR_URL).status_code == 409
+
+
+def test_watch_lists_open_and_merged_prs(client):
+    assert client.get("/g/contrib/watch").status_code == 404
+    a, b, c, d = send(client), send(client), send(client), send(client)
+    move(client, a, "pr", pr_url=PR_URL)
+    move(client, b, "pr", pr_url=PR_URL.replace("/7", "/8"))
+    move(client, b, "merged")
+    move(client, c, "pr", pr_url=PR_URL.replace("/7", "/9"))
+    move(client, c, "live")
+    items = client.get("/g/contrib/watch", headers=H).json()["items"]
+    got = {x["id"]: x for x in items}
+    assert a in got and b in got and c not in got and d not in got
+    assert got[b]["status"] == "merged" and got[b]["pr_url"].endswith("/pull/8")
+    assert set(got[a]) == {"id", "title", "status", "pr_url", "updated"}
+
+
+def test_mail_limit_per_address(client, monkeypatch):
+    """Чужую почту не завалить: с одним адресом — не больше MAIL_N правок с письмами в сутки, дальше правка без писем."""
+    monkeypatch.setattr(contrib, "IP_N", 100)
+    for _ in range(contribmail.MAIL_N):
+        assert client.post("/g/contrib", json=base(patch=PATCH, email="limit@example.org")).json()["notify"] is True
+    r = client.post("/g/contrib", json=base(patch=PATCH, email="limit@example.org"))
+    assert r.status_code == 200 and r.json()["notify"] is False and mail_row(r.json()["id"]) is None
+
+
+def test_mail_text_has_no_foreign_links(client):
+    cid = send(client, email=EMAIL, title="Выигрыш на https://scam.example/win", author="www.spam.example")
+    move(client, cid, "pr", pr_url=PR_URL)
+    m = mails(client, cid)[0]
+    blob = m["subject"] + m["text"] + m["html"]
+    assert "scam.example" not in blob and "spam.example" not in blob
+
+
+def test_sweep_expires_old_mails_and_addresses(client):
+    cid = send(client, email=EMAIL)
+    move(client, cid, "rejected", reason="не накладывается")
+    st = fcg.db()
+    with st.lock:
+        st.db.execute("UPDATE contrib_outbox SET created = created - ? WHERE cid = ?", (contribmail.OUTBOX_TTL + 10, cid))
+    assert mails(client, cid) == []                                          # outbox сам чистит просроченное
+    assert mail_row(cid) is None
+    cid2 = send(client, email=EMAIL)
+    with st.lock:
+        st.db.execute("UPDATE contrib_mail SET created = created - ? WHERE cid = ?", (contribmail.MAIL_KEEP + 10, cid2))
+    mails(client, cid2)
+    assert mail_row(cid2) is None
+
+
+def test_mail_links_follow_fc_site(client, monkeypatch):
+    monkeypatch.setenv("FC_SITE", "https://game.example.org/")
+    cid = send(client, email=EMAIL)
+    move(client, cid, "pr", pr_url=PR_URL)
+    m = mails(client, cid)[0]
+    assert "https://game.example.org/contribute.html#" + cid in m["text"] and "city.ariflame.com" not in m["text"]

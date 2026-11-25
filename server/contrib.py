@@ -4,22 +4,29 @@ Actions (.github/workflows/contrib-intake.yml) раз в 15 минут заби�
 
 Задача 24.11: «скилл, который любой скопирует в свой ChatGPT, даже без GitHub… и ручка, чтобы PR хотя бы просто
 появился у нас». Страница — client/contribute.html, навык для ИИ — client/dev/ (tools/build.cjs собирает пакет кода).
+25.11: необязательная почта — письмо, когда правка стала PR, принята, в городе или отклонена (contribmail.py).
 
-  POST /g/contrib            {title, idea, author?, contact?, tool?, agree: true, и правка — одно из:
+  POST /g/contrib            {title, idea, author?, contact?, email?, tool?, agree: true, и правка — одно из:
                               patch (git diff) | files [{path, content}] | zip (base64 архива с файлами по путям репо)}
-                             → 200 {id, status} / 400 что не так / 413 велико / 429 часто / 507 очередь полна
-  GET  /g/contrib/<id>       → {id, title, status, pr_url?, reason?, created, updated} — без автора и контакта
-  GET  /g/contrib/pending    заголовок X-Contrib-Key = FC_CONTRIB_KEY → {items: [...]} (контакт не отдаётся)
-  POST /g/contrib/<id>/result  (тот же ключ) {status: taken|pr|rejected|pending, pr_url?, reason?}
-  статусы: pending → taken (забрали) → pr (открыт PR) | rejected (причина — человеку на странице)
+                             → 200 {id, status, files, notify} / 400 что не так / 413 велико / 429 часто / 507 очередь полна
+  GET  /g/contrib/<id>       → {id, title, status, pr_url?, reason?, created, updated} — без автора, контакта и почты
+  GET  /g/contrib/pending    заголовок X-Contrib-Key = FC_CONTRIB_KEY → {items: [...]} (контакт и почта не отдаются)
+  GET  /g/contrib/watch      (тот же ключ) → {items: [{id, title, status, pr_url, updated}]} — правки в pr / merged:
+                             contrib-intake смотрит их PR на GitHub (влит? закрыт? уже в выпуске live?)
+  POST /g/contrib/<id>/result  (тот же ключ) {status, pr_url?, reason?}
+  статусы: pending → taken (забрали) → pr (открыт PR) → merged (влит в main) → live (в выпуске live — в городе);
+           rejected — не наложилась / сторож против (причина — человеку на странице), closed — PR закрыт без слияния.
+           live / rejected / closed — окончательные; назад из pr не ходят (повторный PR той же правки не откроется).
 
 Защита: входа не нужно (правку может прислать любой); правка — только текстовые файлы в client/ и docs/ (не vendor,
 не config.js, не данные карты Минска), без бинарных патчей и «..»; размеры ограничены; не чаще IP_N за час с адреса и
 TOTAL_N в сутки на сервер; в очереди — не больше QUEUE_FILES/QUEUE_BYTES. Слова и ссылки проверяет сторож содержания
 в contrib-intake (те же списки, что в CI). Номер правки — случайный (12 знаков): статус видит только тот, у кого ссылка.
-Контакт автора хранится только здесь, в PR не попадает. Ключ выключен (FC_CONTRIB_KEY пуст) — очередь не отдаётся.
+Контакт автора хранится только здесь, в PR не попадает. Почта — вообще не в очереди, а в базе (contribmail.py): JSON
+правки целиком уходит в GitHub Actions, адрес туда попасть не может. Ключ выключен (FC_CONTRIB_KEY пуст) — очередь не
+отдаётся.
 
-Подключает app.py: `app.include_router(contrib.make_router(lambda: CONTRIB_DIR))`.
+Подключает app.py: `app.include_router(contrib.make_router(lambda: CONTRIB_DIR, db, fcmodes.admin_key))`.
 """
 from __future__ import annotations
 
@@ -38,6 +45,7 @@ from collections import deque
 
 from fastapi import APIRouter, HTTPException, Request
 
+import contribmail  # письма о статусе правки (почта — в базе, не в очереди)
 from clientip import client_ip  # адрес — из прокси-заголовков, разобранных uvicorn, а не левый X-Forwarded-For (M-2)
 
 BODY_MAX = 1_400_000             # байт запроса: zip в base64 (+33%) или текст правки
@@ -47,14 +55,25 @@ ZIP_MAX, ZIP_ENTRIES, ZIP_UNPACKED = 1_000_000, 80, 2_000_000
 IP_N, IP_WIN = 6, 3600.0         # правок с адреса за час
 TOTAL_N, TOTAL_WIN = 300, 86400.0
 QUEUE_FILES, QUEUE_BYTES = 2000, 400 * 1024 * 1024
-KEEP = 60 * 86400                # закрытые (pr / rejected) правки хранятся 60 дней
+KEEP = 60 * 86400                # окончательные (live / rejected / closed) правки хранятся 60 дней
+KEEP_OPEN = 180 * 86400          # pr / merged — пока за ними следит contrib-intake, но не дольше полугода
+WATCH_N = 200                    # правок в pr / merged за один обход contrib-intake
 
 ID_RE = re.compile(r"[A-Za-z0-9_-]{12}")
 # что можно менять правкой с сайта: код и данные игры, документы; расширения — только текст
 PATH_RE = re.compile(r"(client|docs)/[A-Za-z0-9._/-]{1,180}")
 EXT_OK = (".js", ".json", ".html", ".css", ".md", ".txt", ".svg")
 DENY = ("client/vendor/", "client/minsk/", "client/config.js")
-STATUSES = ("pending", "taken", "pr", "rejected")
+STATUSES = ("pending", "taken", "pr", "merged", "live", "rejected", "closed")
+FINAL = ("live", "rejected", "closed")
+# куда можно перейти: вперёд и «вернуть в очередь» до PR; из pr — только вперёд (иначе сбой сети после открытия PR
+# вернул бы правку в очередь и открыл второй PR); окончательные статусы не меняются
+NEXT = {
+    "pending": ("pending", "taken", "pr", "rejected"),
+    "taken": ("pending", "taken", "pr", "rejected"),
+    "pr": ("pr", "merged", "live", "closed", "rejected"),
+    "merged": ("merged", "live"),
+}
 
 _hits: dict[str, deque] = {}
 _total: deque = deque()
@@ -233,9 +252,20 @@ def _public(d: dict) -> dict:
     return out
 
 
-def make_router(contrib_dir) -> APIRouter:
-    """contrib_dir() → папка очереди (создаётся при первой правке)."""
+def make_router(contrib_dir, db, admin_key) -> APIRouter:
+    """contrib_dir() → папка очереди (создаётся при первой правке); db() → Store (почта и письма, contribmail.py);
+    admin_key() → ключ /g/admin/* (modes.admin_key) — очередь писем для tools/deploy/city-mail.sh."""
     rt = APIRouter()
+    ready = {"ok": False}
+
+    def store():
+        st = db()
+        if not ready["ok"]:
+            contribmail.ensure(st)
+            ready["ok"] = True
+        return st
+
+    rt.include_router(contribmail.make_router(store, admin_key))
 
     def path(cid: str) -> str:
         return os.path.join(contrib_dir(), cid + ".json")
@@ -274,9 +304,10 @@ def make_router(contrib_dir) -> APIRouter:
             if now - st.st_mtime > KEEP:            # старые закрытые правки — убираем (открытые к этому времени давно взяты)
                 try:
                     with open(p, encoding="utf-8") as f:
-                        if json.load(f).get("status") in ("pr", "rejected"):
-                            os.remove(p)
-                            continue
+                        stt = json.load(f).get("status")
+                    if stt in FINAL or (stt in ("pr", "merged") and now - st.st_mtime > KEEP_OPEN):
+                        os.remove(p)
+                        continue
                 except (OSError, ValueError):
                     pass
             n += 1
@@ -307,6 +338,7 @@ def make_router(contrib_dir) -> APIRouter:
         author = _text(body, "author", 1, 40, need=False)
         contact = _text(body, "contact", 3, 80, need=False)
         tool = _text(body, "tool", 1, 60, need=False)
+        email = contribmail.clean_email(body.get("email"))    # необязательна; в JSON правки (и в GitHub) не попадает
         kinds = [k for k in ("patch", "files", "zip") if body.get(k)]
         if len(kinds) != 1:
             raise HTTPException(400, "нужна сама правка: git diff, файлы или .zip — что-то одно")
@@ -328,7 +360,8 @@ def make_router(contrib_dir) -> APIRouter:
             raise HTTPException(507, "очередь правок переполнена — попробуйте позже")
         _limit(client_ip(request))
         save(d)
-        return {"id": d["id"], "status": d["status"], "files": _public(d)["files"]}
+        notify = contribmail.remember(store(), d["id"], email) if email else False
+        return {"id": d["id"], "status": d["status"], "files": _public(d)["files"], "notify": notify}
 
     @rt.get("/g/contrib/pending")
     def pending(request: Request):
@@ -347,10 +380,34 @@ def make_router(contrib_dir) -> APIRouter:
             except (OSError, ValueError):
                 continue
             if d.get("status") == "pending":
-                d.pop("contact", None)
+                d.pop("contact", None)              # контакт — только мейнтейнеру; почты в JSON нет вовсе (contribmail.py)
+                d.pop("email", None)
                 items.append(d)
         items.sort(key=lambda d: d.get("created", 0))
         return {"items": items[:20]}
+
+    @rt.get("/g/contrib/watch")
+    def watch(request: Request):
+        """Правки с открытым или влитым PR — contrib-intake сверяет их с GitHub (влит / закрыт / уже в выпуске live).
+        Только номер, название, статус и ссылка на PR: ни автора, ни контакта, ни почты."""
+        need_key(request)
+        items = []
+        try:
+            names = os.listdir(contrib_dir())
+        except OSError:
+            names = []
+        for name in names:
+            if not name.endswith(".json"):
+                continue
+            try:
+                with open(os.path.join(contrib_dir(), name), encoding="utf-8") as f:
+                    d = json.load(f)
+            except (OSError, ValueError):
+                continue
+            if d.get("status") in ("pr", "merged") and d.get("pr_url"):
+                items.append({k: d.get(k) for k in ("id", "title", "status", "pr_url", "updated")})
+        items.sort(key=lambda d: d.get("updated") or 0)
+        return {"items": items[:WATCH_N]}
 
     @rt.get("/g/contrib/{cid}")
     def status(cid: str):
@@ -366,7 +423,10 @@ def make_router(contrib_dir) -> APIRouter:
             raise HTTPException(400, "не JSON") from None
         st = body.get("status") if isinstance(body, dict) else None
         if st not in STATUSES:                  # pending — вернуть в очередь, если у забравшего сломалась сеть или git
-            raise HTTPException(400, "status: pending | taken | pr | rejected")
+            raise HTTPException(400, "status: " + " | ".join(STATUSES))
+        was = d.get("status") or "pending"
+        if st not in NEXT.get(was, ()):
+            raise HTTPException(409, f"из «{was}» в «{st}» нельзя")
         d["status"] = st
         url = body.get("pr_url")
         if st == "pr":
@@ -376,7 +436,11 @@ def make_router(contrib_dir) -> APIRouter:
         reason = body.get("reason")
         if isinstance(reason, str) and reason.strip():
             d["reason"] = reason.strip()[:500]
-        d["updated"] = int(time.time())
+        if st != was:
+            d["updated"] = int(time.time())
+            # письмо — до записи статуса: не запишется статус — intake повторит отчёт, а письмо не задвоится
+            # (одно на статус); наоборот письмо потерялось бы — правка уже ушла бы из «pr» и больше не сверялась
+            contribmail.enqueue(store(), d, st)
         save(d)
         return _public(d)
 

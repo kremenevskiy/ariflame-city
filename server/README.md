@@ -29,6 +29,8 @@ X-Forwarded-For, а его пишет сам клиент.
 | `FC_PUBLIC` | адрес из запроса | публичный HTTPS-адрес сервера в ссылках на кадр (`https://game.example.org`) |
 | `FC_ADMIN_KEY` | файл `admin.key` рядом с базой | ключ `/g/admin/*` (файл создаётся сам, сразу 0600). Он же — соль непрозрачных `fid` игроков; файл не прочесть и не создать — ошибка в журнале и случайный ключ до перезапуска (fid после рестарта сменятся) |
 | `FC_TRACKS` | `server/tracks.json`, иначе `client/tracks.json` | трассы гонок |
+| `FC_CONTRIB`, `FC_CONTRIB_KEY` | `<папка базы>/contrib`, пусто | очередь правок с сайта и её ключ — «Правки без GitHub» ниже |
+| `FC_SITE` | `https://city.ariflame.com` | адрес сайта в письмах авторам правок (ссылки на игру и статус правки) |
 
 ## Личность
 
@@ -134,9 +136,27 @@ X-Forwarded-For, а его пишет сам клиент.
 
 | ручка | что |
 |---|---|
-| `POST /g/contrib` | `{title, idea, author?, contact?, tool?, agree: true}` и правка — `patch` (git diff), `files` [{path, content}] или `zip` (base64). Только текстовые файлы в `client/` и `docs/`, без удаления файлов. 200 `{id, status, files}` / 400 что не так / 413 / 429 / 507 |
-| `GET /g/contrib/<id>` | статус: `pending` → `taken` → `pr` (`pr_url`) или `rejected` (`reason`); без автора и контакта |
-| `GET /g/contrib/pending`, `POST /g/contrib/<id>/result` | только с заголовком `X-Contrib-Key` = `FC_CONTRIB_KEY` (нет ключа — 404) |
+| `POST /g/contrib` | `{title, idea, author?, contact?, email?, tool?, agree: true}` и правка — `patch` (git diff), `files` [{path, content}] или `zip` (base64). Только текстовые файлы в `client/` и `docs/`, без удаления файлов. 200 `{id, status, files, notify}` / 400 что не так / 413 / 429 / 507 |
+| `GET /g/contrib/<id>` | статус: `pending` → `taken` → `pr` (`pr_url`) → `merged` → `live`; или `rejected` / `closed` (`reason`); без автора, контакта и почты |
+| `GET /g/contrib/pending`, `GET /g/contrib/watch`, `POST /g/contrib/<id>/result` | только с заголовком `X-Contrib-Key` = `FC_CONTRIB_KEY` (нет ключа — 404). `watch` — правки в `pr`/`merged`: `{id, title, status, pr_url, updated}` для сверки с GitHub |
+| `GET /g/admin/contrib/outbox` | `X-Admin-Key`: письма на отправку `[{mid, cid, status, to, subject, text, html, created}]` (до 50, старые первыми) |
+| `POST /g/admin/contrib/outbox/<mid>/sent` | `X-Admin-Key`, `{result: sent\|bounced}` → `{ok, erased}`; повтор — `{ok, already}` |
+
+Статусы правки: `pending` (в очереди) → `taken` (робот забрал) → `pr` (открыт PR) → `merged` (влит в `main`) → `live` (коммит
+слияния уже в выпуске `live` — в городе у всех); `rejected` — не наложилась или сторож против, `closed` — PR закрыт без
+слияния (причина — последний комментарий мейнтейнера). `live`, `rejected`, `closed` — окончательные; из `pr` назад в
+очередь не вернуть (иначе сбой сети после открытия PR открыл бы второй). Недопустимый переход — 409. `merged`/`live`/
+`closed` сообщает тот же contrib-intake: раз в 15 минут сверяет правки из `watch` с GitHub.
+
+**Письма авторам** (contribmail.py). Почта необязательна: строго латиницей, ≤ 120 знаков, хранится строчными. Лежит
+только в базе (`contrib_mail`), не в JSON очереди — тот целиком уходит в GitHub Actions, поэтому адрес не может попасть ни
+в PR, ни в журнал Actions, ни в публичные ручки. При переходе в `pr`, `merged`, `live`, `rejected`, `closed` письмо (тема,
+текст и простой HTML, по-русски, на «ты») ложится в `contrib_outbox` — одно на статус, повтор отчёта не дублирует.
+Отправляет их с хоста `tools/deploy/city-mail.sh` через Resend (у контейнера игры нет интернета) — [docs/DEPLOY.md](../docs/DEPLOY.md).
+Адрес стирается у каждого письма сразу после отправки, а у правки — после письма об окончательном статусе или если
+адрес не принимает почту (`bounced`). Неотправленное за 14 дней письмо выбрасывается, адрес правки без окончательного
+статуса живёт не дольше 180 дней. Чужую почту не завалить: на один адрес — до 5 правок с письмами в сутки (дальше правка
+принимается без писем, `notify: false`), ссылки из названия и ника в письмо не попадают.
 
 Ошибки у игроков (errors.py; клиент — `client/ferr.js`) и необработанные исключения самого сервера (вид `server`):
 
@@ -157,7 +177,8 @@ X-Forwarded-For, а его пишет сам клиент.
 Всё в одной SQLite, `CREATE … IF NOT EXISTS` при старте, старые таблицы не меняются (миграции идемпотентны):
 `players`, `sessions` (app.py); `honest`, `credit`, `races`, `weekly_winners`, `friends`, `friend_req`, … (modes.py);
 `props`, `biz`, `season_*` (realty.py, season.py), `homes` (зеркало для старых клиентов); `prog*`, `biz_week`,
-`biz_total`, `infl_me`, `ach` (progress.py); `crews`, `crew_*` (crews.py); `war_*` (war.py).
+`biz_total`, `infl_me`, `ach` (progress.py); `crews`, `crew_*` (crews.py); `war_*` (war.py); `err_*` (errors.py);
+`contrib_mail`, `contrib_outbox` (contribmail.py — почта авторов правок и письма; сами правки — папка `contrib/`).
 Резервная копия — `sqlite3 game.db ".backup game-$(date +%F).db"` (безопасно на живой базе в WAL).
 
 ## Тесты

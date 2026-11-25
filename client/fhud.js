@@ -211,12 +211,29 @@
     delete markers[id];
   }
   var routeT = 0;
+  /* Миникарта отдаляется на скорости, как в GTA (задача: «когда едешь быстро — чтобы карта отдалялась, больше пространства
+     видно; когда останавливаешься, медленнее идёшь — приближалась»). Пешком и бегом — как было (~84 м до края круга),
+     город на машине ~50 км/ч — в 1,55 раза дальше, быстрая машина и самолёт — в 2,3 (телефон — в 2: круг там меньше).
+     Отдаляется за ~0,7 с, приближается мягче, за ~1,6 с: торможение у светофора и удар не дёргают карту. Метки, маршрут,
+     слои модулей и стрелка считаются от того же zoom — масштаб и места у них верные; большой карты это не касается. */
+  var mzF = 1, MZ_V = [0, 9, 14, 22, 32, 45], MZ_U = [0, 0, 0.42, 0.69, 0.92, 1];
+  function miniTarget(P) {
+    var o = P.mode === "car" && P.car ? P.car : P.mode === "air" && P.air ? P.air : P;
+    var v = Math.hypot(o.vx || 0, o.vz || 0), u = 1;
+    for (var i = 1; i < MZ_V.length; i++) if (v < MZ_V[i]) { u = MZ_U[i - 1] + (MZ_U[i] - MZ_U[i - 1]) * (v - MZ_V[i - 1]) / (MZ_V[i] - MZ_V[i - 1]); break; }
+    var top = FC.mobile ? 2 : 2.3, f = 1 + (top - 1) * u;
+    if (P.mode === "car") f = Math.max(f, 1.2);                     // за рулём и стоя — чуть шире, чем пешком
+    else if (P.mode === "air" || P.mode === "chute") f = Math.max(f, 1.3 + (top - 1.3) * FC.clamp(((P.air && P.air.y) || P.y || 0) / 300, 0, 1));
+    return f;
+  }
   function drawMini(dt) {
     var P = FC.player; if (!P) return;
     var size = mini.clientWidth || 160, dpr = Math.min(global.devicePixelRatio || 1, 2);
     if (mini.width !== size * dpr) { mini.width = mini.height = size * dpr; }
     var c = mctx, W2 = mini.width / 2;
-    var zoom = (P.mode === "car" ? 0.55 : 0.95) * dpr / SCALE * (size / 160);
+    var mzT = miniTarget(P);
+    mzF += (mzT - mzF) * (1 - Math.exp(-Math.min(dt, 0.25) / (mzT > mzF ? 0.7 : 1.6)));
+    var zoom = 0.95 / mzF * dpr / SCALE * (size / 160);
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.fillStyle = "#0b1020"; c.fillRect(0, 0, mini.width, mini.height);
     var yaw = FC.cam ? FC.cam.yaw : 0;
@@ -320,6 +337,7 @@
     leg.querySelectorAll(".lgo[data-x]").forEach(function (b) { b.addEventListener("click", function (e) { e.stopPropagation(); teleport(+b.dataset.x, +b.dataset.z, true); }); });
     var more = leg.querySelector(".lmore");
     if (more) more.addEventListener("click", function (e) { e.stopPropagation(); var on = leg.classList.toggle("all"); more.textContent = on ? "⚡ Районы ▴" : "⚡ Районы ▾"; });
+    FC.emit("map:open", { legend: leg });                          // свои кнопки в строку мест (fcrowd: «👥 К игрокам»)
     if (FC.mp && FC.mp.online) FC.mp.online().then(function (list) {
       var box = leg.querySelector(".lpl"); if (!box || !list || !list.length) return;
       box.innerHTML = list.slice(0, 12).map(function (p) {
@@ -779,6 +797,8 @@
   // его пороги крупнее). Все слои спрашивают уровень здесь, а не свои числа: одна шкала на оба города.
   H.mapTier = function (k) { return M.minsk ? (k < 0.05 ? 0 : k < 0.2 ? 1 : 2) : (k < 0.2 ? 0 : k < 0.5 ? 1 : 2); };
   H.areaCard = areaCard;
+  // миникарта: во сколько раз она сейчас отдалена от пешей (1 — пешком), куда стремится и сколько метров до края круга
+  H.miniZoom = function () { return { f: mzF, target: FC.player ? miniTarget(FC.player) : 1, r: 80 * mzF / 0.95 }; };
   H.openMap = openMap; H.teleport = teleport; H.addMapLayer = addMapLayer; H.pause = togglePause; H.atlasStyle = atlasStyle; H.esc = esc;
   H.inDialog = function () { return !!dq; };
   FC.hud = H;

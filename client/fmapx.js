@@ -649,7 +649,9 @@
     if (mode === "big" && k < 0.25) return;                        // подписи рисует карта последними (mapLabels)
     var nl = FC.osm.chunksLoaded();
     if (!det.cv) { det.cv = document.createElement("canvas"); det.cv.width = det.cv.height = Math.round(DET * DK); }
-    if (Math.hypot(cx - det.x, cz - det.z) > DET * 0.28 || (nl !== det.n && performance.now() - det.t > 1500)) {
+    // миникарта на скорости отдаляется (fhud): кусок перерисовываем раньше, чтобы его край не въезжал в круг
+    var need = mode === "mini" ? c.canvas.width / 2 / k + 20 : 0;
+    if (Math.hypot(cx - det.x, cz - det.z) > Math.max(DET * 0.08, Math.min(DET * 0.28, DET / 2 - need)) || (nl !== det.n && performance.now() - det.t > 1500)) {
       det.x = Math.round(cx); det.z = Math.round(cz); det.n = nl; det.t = performance.now();
       var g = det.cv.getContext("2d"), x0 = det.x - DET / 2, z0 = det.z - DET / 2;
       g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, det.cv.width, det.cv.height);

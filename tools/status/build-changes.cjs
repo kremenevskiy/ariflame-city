@@ -18,7 +18,8 @@ const W = require("../check/words.cjs");
 const OUT = process.argv[2] || "changes.json";
 const REPO = process.env.GITHUB_REPOSITORY || "kremenevskiy/ariflame-city";
 const N = 80;
-const TECH = /^(CI|Тесты|Доки|Документы|Docs|Сборка|Проверки|Release|Выпуск)\b[:\s]/i;   // служебное — в «что нового» не показываем
+// служебное — в «что нового» не показываем (без \b: в JS он не видит границу после кириллицы)
+const TECH = /^(CI|Тесты|Доки|Документы|Docs|Сборка|Проверки|Release|Выпуск)(?=[:\s])/i;
 
 function git(args) { try { return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 << 20 }); } catch (e) { return ""; } }
 const clean = (t) => (W.bad(t) ? "" : t);

@@ -657,6 +657,24 @@
     }
     return false;
   }
+  // Дом прячется под маской, только если он почти весь внутри неё (≥ 70 % вершин), а не одним центром. Иначе длинный
+  // корпус, чей центр случайно лёг в контур своего здания-места, пропадал целиком, а его стены оставались: у «Маяка
+  // Минска» 387-метровый подиум исчезал из-за башни рядом — газон, а пройти нельзя (обращение R-X9WE, 25.11.2026).
+  function maskedB(p, cx, cz) {
+    if (!masks.length || !masked(cx, cz)) return false;
+    var n = 0;
+    for (var i = 0; i < p.length; i++) if (nearMask(p[i][0], p[i][1])) n++;
+    return n >= p.length * 0.7;
+  }
+  // вершина в маске или на её границе (±1,5 м): здание-место рисуют по тому же контуру OSM — вершины совпадают с краем
+  function nearMask(x, z) {
+    for (var i = 0; i < masks.length; i++) {
+      var m = masks[i];
+      if (m.r != null ? Math.hypot(x - m.x, z - m.z) < m.r + 1.5 :
+        (x >= m.x0 - 1.5 && x <= m.x1 + 1.5 && z >= m.z0 - 1.5 && z <= m.z1 + 1.5 && (pipP(x, z, m.p) || edgeDist(m.p, x, z) < 1.5))) return true;
+    }
+    return false;
+  }
 
   /* ---- столкновения: сетка 20 м со ссылками на контуры ----------------------------------------------------- */
   var GRID = 20, grid = {};
@@ -693,7 +711,7 @@
       else if (b[6] === 1 && b[2] < 2.5) J.items.push(it = { p: p0, x0: bb[0], z0: bb[1], x1: bb[2], z1: bb[3], h: b[1], mh: b[2], id: b[0], colOnly: true, top: b[1], rf: null });
       // часть над землёй (башня на подиуме, консоль): по ней тоже ходят, а стеной она — только на своей высоте (up)
       else if (b[6] & 1) J.items.push(it = { p: p0, x0: bb[0], z0: bb[1], x1: bb[2], z1: bb[3], h: b[1], mh: b[2], id: b[0], colOnly: true, up: true, top: b[1], rf: null });
-      if (b[6] & 1 && !(masks.length && masked(cx, cz))) {
+      if (b[6] & 1 && !maskedB(p0, cx, cz)) {
         var rf = building(b, J, p0);
         if (rf && it) { it.rf = rf; it.top = rf.top; }        // скатная: стены до карниза, выше — скат (roofAt)
       }

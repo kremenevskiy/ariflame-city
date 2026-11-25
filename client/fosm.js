@@ -720,10 +720,13 @@
     J.step = 2;
   }
   function stepFlats(J, d) {
+    // Вода — над газоном парков (0,014): пруды и каналы внутри парка (Слепянка у библиотеки) раньше лежали под травой —
+    // на карте синяя полоса, в городе газон, а герой «плывёт» по нему: медленно и «в земле» (25.11). Под площадями
+    // (0,018) и дорогами вода остаётся.
     (d.w || []).forEach(function (w) {
       var p = pts(w[0]);
-      if (w.length === 1) { if (p.length >= 3) { flatPoly(J.W, p, 0.012, [1, 1, 1]); waters.push({ p: p, key: J.key, bb: bbOf(p) }); } }
-      else if (p.length >= 2) { strip(J.W, p, w[1], 0.013, [1, 1, 1]); waterLines.push({ p: p, w: w[1], key: J.key, bb: bbOf(p, w[1]) }); }
+      if (w.length === 1) { if (p.length >= 3) { flatPoly(J.W, p, 0.016, [1, 1, 1]); waters.push({ p: p, key: J.key, bb: bbOf(p) }); } }
+      else if (p.length >= 2) { strip(J.W, p, w[1], 0.0165, [1, 1, 1]); waterLines.push({ p: p, w: w[1], key: J.key, bb: bbOf(p, w[1]) }); }
     });
     (d.g || []).forEach(function (g) {
       var p = pts(g[1]); if (p.length < 3) return;

@@ -64,6 +64,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 300   # история — для changes.json («Что нового», лента правок) и status.json; с глубиной 1 там одна запись
       - uses: actions/setup-node@v4
         with:
           node-version: 22

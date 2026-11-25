@@ -18,23 +18,40 @@ const W = require("../check/words.cjs");
 const OUT = process.argv[2] || "changes.json";
 const REPO = process.env.GITHUB_REPOSITORY || "kremenevskiy/ariflame-city";
 const N = 80;
-const TECH = /^(CI|Тесты|Доки|Docs|Сборка|Проверки|Release|Выпуск)\b[:\s]/i;   // служебное — в «что нового» не показываем
+const TECH = /^(CI|Тесты|Доки|Документы|Docs|Сборка|Проверки|Release|Выпуск)\b[:\s]/i;   // служебное — в «что нового» не показываем
 
 function git(args) { try { return execFileSync("git", args, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], maxBuffer: 16 << 20 }); } catch (e) { return ""; } }
 const clean = (t) => (W.bad(t) ? "" : t);
 
 function para(body) {
-  const lines = String(body || "").split("\n").filter((l) => !/^(Co-Authored-By|Signed-off-by|Reviewed-by):/i.test(l.trim()));
+  // без служебных строк: подписи соавторов и «# Conflicts» из сообщения слияния
+  const lines = String(body || "").split("\n").filter((l) => !/^(Co-Authored-By|Signed-off-by|Reviewed-by):/i.test(l.trim()) && !/^\s*#/.test(l));
   const first = lines.join("\n").trim().split(/\n\s*\n/)[0] || "";
   const t = first.replace(/\s*\n\s*/g, " ").trim();
   return t.length > 280 ? t.slice(0, 277).replace(/\s+\S*$/, "") + "…" : t;
 }
 
+// слияние ветки без своего текста: описание — из коммитов ветки (самый свежий не служебный), остальные — «Ещё: …»;
+// автор — автор ветки (кто делал), а не тот, кто сливал
+function branchInfo(p1, p2) {
+  const log = git(["log", "--format=%an%x1f%s%x1f%b%x1e", p1 + ".." + p2]);
+  const cs = log.split("\x1e").map((r) => r.replace(/^\n/, "")).filter(Boolean).map((r) => { const [an, s, b] = r.split("\x1f"); return { an, s, b }; })
+    .filter((c) => !TECH.test(c.s) && !/^Merge /.test(c.s));
+  if (!cs.length) return null;
+  let text = para(cs[0].b);
+  const more = cs.slice(1).map((c) => c.s.replace(/[.:].*$/, "")).filter(Boolean);
+  if (more.length) text = (text ? text + " " : "") + "Ещё: " + more.join("; ") + ".";
+  return { text: text.length > 280 ? text.slice(0, 277).replace(/\s+\S*$/, "") + "…" : text, author: cs[cs.length - 1].an };
+}
+
 function build() {
-  const log = git(["log", "--first-parent", "-n", String(N), "--format=%H%x1f%h%x1f%aI%x1f%an%x1f%s%x1f%b%x1e", "HEAD"]);
+  const log = git(["log", "--first-parent", "-n", String(N), "--format=%H%x1f%h%x1f%aI%x1f%an%x1f%s%x1f%P%x1f%b%x1e", "HEAD"]);
   const items = log.split("\x1e").map((r) => r.replace(/^\n/, "")).filter(Boolean).map((r) => {
-    const [sha, short, at, author, subject, body] = r.split("\x1f");
-    let title = subject || "", pr = null, m;
+    const [sha, short, at, author0, subject, parents, body0] = r.split("\x1f");
+    let author = author0, body = body0;
+    const ps = (parents || "").split(" ").filter(Boolean);
+    if (ps.length === 2 && !para(body)) { const bi = branchInfo(ps[0], ps[1]); if (bi) { body = bi.text; author = bi.author || author; } }
+    let title = (subject || "").replace(/^Слияние:\s*/, ""), pr = null, m;
     if ((m = /^Merge pull request #(\d+) from \S+/.exec(title))) { pr = +m[1]; title = (body || "").split("\n")[0] || title; }
     else if ((m = /\s*\(#(\d+)\)$/.exec(title))) { pr = +m[1]; title = title.slice(0, m.index); }
     const site = / \(через сайт\)$/.exec(author || "");
@@ -45,6 +62,17 @@ function build() {
       tech: TECH.test(title) || undefined,
       url: pr ? `https://github.com/${REPO}/pull/${pr}` : `https://github.com/${REPO}/commit/${sha}`,
     };
+  });
+  // тексты для игроков поверх коммитов (changes-notes.json): заголовок и описание по-человечески, служебное — скрыть
+  let notes = {};
+  try { notes = JSON.parse(fs.readFileSync(path.join(__dirname, "changes-notes.json"), "utf8")).notes || {}; } catch (e) { /* без заметок */ }
+  items.forEach((it) => {
+    const k = Object.keys(notes).find((n) => it.sha.startsWith(n) || n.startsWith(it.sha));
+    if (!k) return;
+    const n = notes[k];
+    if (n.title) it.title = clean(n.title) || it.title;
+    if (n.text != null) it.text = clean(n.text);
+    if (n.tech) it.tech = true;
   });
   return { v: 1, repo: REPO, head: items.length ? items[0].sha : null, generated: new Date().toISOString(), items };
 }

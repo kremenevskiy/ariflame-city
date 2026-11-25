@@ -19,6 +19,8 @@ const BASE = new URL(process.env.BASE || "http://127.0.0.1:8080/");
 const SHOTS = args.includes("--shots") ? path.resolve(args[args.indexOf("--shots") + 1]) : null;
 const PHONE = args.includes("--phone");
 const EXTRA = process.env.QS || "";                   // доп. параметры адреса, например "&mp=off"
+// раннер CI — 2–4 ядра без видеокарты, рендер программный: сроки ожидания вдвое длиннее (на маке хватает обычных)
+const SLOW = process.env.CI ? 2 : 1;
 
 const CASES = [
   { name: "flame", qs: "?city=flame&q=mid" },
@@ -31,6 +33,8 @@ async function one(browser, c) {
     ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }
     : { viewport: { width: 1280, height: 800 } });
   const page = await ctx.newPage();
+  // SMOKE_CPU=4 — процессор медленнее в N раз: так на маке видно, как игра стартует на раннере CI (2–4 ядра, без видеокарты)
+  if (+process.env.SMOKE_CPU > 1) await (await ctx.newCDPSession(page)).send("Emulation.setCPUThrottlingRate", { rate: +process.env.SMOKE_CPU });
   const errs = [], foreign = [], reqs = [];
   page.on("console", (m) => { if (m.type() === "error") errs.push(m.text()); });
   page.on("pageerror", (e) => errs.push("pageerror: " + e.message));
@@ -41,8 +45,13 @@ async function one(browser, c) {
     try { if (new URL(u).origin !== BASE.origin) foreign.push(u); } catch (e) { foreign.push(u); }
   });
   page.on("requestfailed", (r) => { if (!/\/g\//.test(r.url())) errs.push("requestfailed: " + r.url()); });
-  await page.goto(new URL(c.qs + EXTRA, BASE).toString(), { waitUntil: "domcontentloaded", timeout: 90000 });
-  await page.waitForFunction(() => window.FC && window.FC.started && window.FC.me, null, { timeout: 90000 });
+  try { return await run(page, c, errs, foreign, reqs); }
+  finally { await ctx.close(); }   // даже после ошибки: иначе игра рисует дальше, съедает процессор, и следующий город не стартует
+}
+
+async function run(page, c, errs, foreign, reqs) {
+  await page.goto(new URL(c.qs + EXTRA, BASE).toString(), { waitUntil: "domcontentloaded", timeout: 90000 * SLOW });
+  await page.waitForFunction(() => window.FC && window.FC.started && window.FC.me, null, { timeout: 90000 * SLOW });
   await page.waitForTimeout(9000);
   const info = await page.evaluate(() => ({
     city: FC.city, guest: FC.me.guest, rid: FC.me.rid, label: FC.me.label,
@@ -50,14 +59,17 @@ async function one(browser, c) {
   }));
   if (SHOTS) {
     fs.mkdirSync(SHOTS, { recursive: true });
-    await page.screenshot({ path: path.join(SHOTS, c.name + ".png") });
+    // снимку нужен свободный кадр: при программном рендере игра рисует без остановки, и снимок ждал больше 30 с
+    // (CI 23–25.11). Останавливаем цикл кадров — на экране остаётся последний нарисованный кадр
+    await page.evaluate(() => { window.requestAnimationFrame = function () { return 0; }; });
+    await page.waitForTimeout(500);
+    await page.screenshot({ path: path.join(SHOTS, c.name + ".png"), timeout: 60000 * SLOW });
     if (c.phone) {                                        // телефон: открыть «телефон» в игре
       await page.evaluate(() => FC.hud && FC.hud.openPhone && FC.hud.openPhone());
       await page.waitForTimeout(800);
-      await page.screenshot({ path: path.join(SHOTS, c.name + "-phone-ui.png") });
+      await page.screenshot({ path: path.join(SHOTS, c.name + "-phone-ui.png"), timeout: 60000 * SLOW });
     }
   }
-  await ctx.close();
   return { case: c.name, info, requests: reqs.length, foreign, errors: errs };
 }
 

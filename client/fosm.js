@@ -679,14 +679,17 @@
   }
 
   /* ---- столкновения: сетка 20 м со ссылками на контуры ----------------------------------------------------- */
-  var GRID = 20, grid = {};
+  // сетка столкновений: ключ клетки — число (gx·65536 + gz) в Map, а не строка «gx,gz» — запросы столкновений идут
+  // сотнями за кадр (люди, машины), строка-ключ на каждую клетку каждого запроса была заметным мусором
+  var GRID = 20, grid = new Map();
+  function gkey(gx, gz) { return gx * 65536 + gz; }
   function gfor(it, fn) {
     for (var gx = Math.floor(it.x0 / GRID); gx <= Math.floor(it.x1 / GRID); gx++)
-      for (var gz = Math.floor(it.z0 / GRID); gz <= Math.floor(it.z1 / GRID); gz++) fn(gx + "," + gz);
+      for (var gz = Math.floor(it.z0 / GRID); gz <= Math.floor(it.z1 / GRID); gz++) fn(gkey(gx, gz));
   }
   var gridV = 0;                                                // новая клетка сетки — сбросить кэш клетки roofAt
-  function gridAdd(it) { gfor(it, function (k) { var l = grid[k]; if (!l) { l = grid[k] = []; gridV++; } l.push(it); }); }
-  function gridDel(it) { gfor(it, function (k) { var l = grid[k]; if (!l) return; var i = l.indexOf(it); if (i >= 0) l.splice(i, 1); }); }
+  function gridAdd(it) { it._q = 0; gfor(it, function (k) { var l = grid.get(k); if (!l) { l = []; grid.set(k, l); gridV++; } l.push(it); }); }
+  function gridDel(it) { gfor(it, function (k) { var l = grid.get(k); if (!l) return; var i = l.indexOf(it); if (i >= 0) l.splice(i, 1); }); }
 
   /* ---- сборка суперкуска: по шагам, не дольше ~7 мс за кадр ------------------------------------------------ */
   var loaded = {}, pending = {}, queue = [], ready = [], job = null, inflight = 0;
@@ -764,8 +767,8 @@
     // (0,018) и дорогами вода остаётся.
     (d.w || []).forEach(function (w) {
       var p = pts(w[0]);
-      if (w.length === 1) { if (p.length >= 3) { flatPoly(J.W, p, 0.016, [1, 1, 1]); waters.push({ p: p, key: J.key, bb: bbOf(p) }); } }
-      else if (p.length >= 2) { strip(J.W, p, w[1], 0.0165, [1, 1, 1]); waterLines.push({ p: p, w: w[1], key: J.key, bb: bbOf(p, w[1]) }); }
+      if (w.length === 1) { if (p.length >= 3) { flatPoly(J.W, p, 0.016, [1, 1, 1]); waters.push({ p: p, key: J.key, bb: bbOf(p) }); wVer++; } }
+      else if (p.length >= 2) { strip(J.W, p, w[1], 0.0165, [1, 1, 1]); waterLines.push({ p: p, w: w[1], key: J.key, bb: bbOf(p, w[1]) }); wVer++; }
     });
     (d.g || []).forEach(function (g) {
       var p = pts(g[1]); if (p.length < 3) return;
@@ -967,6 +970,7 @@
     instDirty = true;
     waters = waters.filter(function (w) { return w.key !== key; });
     waterLines = waterLines.filter(function (w) { return w.key !== key; });
+    wVer++;
   }
   // надписи, провода и тень у стен — только у ближних кусков (вдали их не видно, а вызовы отрисовки стоят)
   function nearVis(force) {
@@ -1220,15 +1224,18 @@
   /* ---- столкновения: круг против многоугольника ------------------------------------------------------------ */
   // записи домов вокруг точки (без частей-«только стен»)
   function near(x, z, r) { return nearAll(x, z, r).filter(function (it) { return !it.colOnly; }); }
-  function nearAll(x, z, r) {
-    var out = [], seen = new Set();
+  // дубли (дом в нескольких клетках) — меткой запроса на самом доме, без Set на каждый вызов
+  var qStamp = 0;
+  function nearAll(x, z, r, out) {
+    out = out || []; var st = ++qStamp;
     for (var gx = Math.floor((x - r) / GRID); gx <= Math.floor((x + r) / GRID); gx++)
       for (var gz = Math.floor((z - r) / GRID); gz <= Math.floor((z + r) / GRID); gz++) {
-        var l = grid[gx + "," + gz]; if (!l) continue;
-        for (var i = 0; i < l.length; i++) if (!seen.has(l[i])) { seen.add(l[i]); out.push(l[i]); }
+        var l = grid.get(gkey(gx, gz)); if (!l) continue;
+        for (var i = 0; i < l.length; i++) { var it = l[i]; if (it._q !== st) { it._q = st; out.push(it); } }
       }
     return out;
   }
+  var colList = [];
   function edgeDist(p, x, z, out) {
     var best = 1e9;
     for (var i = 0, j = p.length - 1; i < p.length; j = i++) {
@@ -1244,7 +1251,8 @@
   // Без y — как раньше: каждый контур от земли — стена на всю высоту.
   var STEP = 0.5;
   function collide(x, z, r, y) {
-    var hit = false, nx = 0, nz = 0, list = nearAll(x, z, r + 1);
+    colList.length = 0;
+    var hit = false, nx = 0, nz = 0, list = nearAll(x, z, r + 1, colList);
     for (var k = 0; k < list.length; k++) {
       var it = list[k];
       if (it.nocol) continue;
@@ -1277,7 +1285,7 @@
     var gx = Math.floor(x / GRID), gz = Math.floor(z / GRID);
     for (var i = 0; i < 4; i++) { var c = rc[i]; if (c.gx === gx && c.gz === gz && c.v === gridV) return c.l; }
     var n = rc[rcI]; rcI = (rcI + 1) & 3;
-    n.gx = gx; n.gz = gz; n.v = gridV; n.l = grid[gx + "," + gz] || null;
+    n.gx = gx; n.gz = gz; n.v = gridV; n.l = grid.get(gkey(gx, gz)) || null;
     return n.l;
   }
   function roofAt(x, z, yMax) {
@@ -1302,10 +1310,25 @@
     }
     return null;
   }
+  // вода: кандидаты по клеткам 100 м (кэш до смены набора воды) — вместо перебора всей загруженной воды на каждый
+  // запрос (люди и машины спрашивают её каждый кадр)
+  var WCELL = 100, wCells = new Map(), wVer = 0, wCellsVer = -1;
+  function waterCell(x, z) {
+    if (wCellsVer !== wVer) { wCells.clear(); wCellsVer = wVer; }
+    var gx = Math.floor(x / WCELL), gz = Math.floor(z / WCELL), k = gx * 65536 + gz, c = wCells.get(k);
+    if (c) return c;
+    var x0 = gx * WCELL, z0 = gz * WCELL, x1 = x0 + WCELL, z1 = z0 + WCELL;
+    c = { w: [], l: [] };
+    for (var i = 0; i < waters.length; i++) { var bb = waters[i].bb; if (bb[0] <= x1 && bb[2] >= x0 && bb[1] <= z1 && bb[3] >= z0) c.w.push(waters[i]); }
+    for (var j = 0; j < waterLines.length; j++) { var b2 = waterLines[j].bb; if (b2[0] <= x1 && b2[2] >= x0 && b2[1] <= z1 && b2[3] >= z0) c.l.push(waterLines[j]); }
+    wCells.set(k, c);
+    return c;
+  }
   function water(x, z) {
-    for (var i = 0; i < waters.length; i++) { var w = waters[i], bb = w.bb; if (x >= bb[0] && x <= bb[2] && z >= bb[1] && z <= bb[3] && pipP(x, z, w.p)) return true; }
-    for (var j = 0; j < waterLines.length; j++) {
-      var l = waterLines[j], b2 = l.bb; if (x < b2[0] || x > b2[2] || z < b2[1] || z > b2[3]) continue;
+    var c = waterCell(x, z), W = c.w, WL = c.l;
+    for (var i = 0; i < W.length; i++) { var w = W[i], bb = w.bb; if (x >= bb[0] && x <= bb[2] && z >= bb[1] && z <= bb[3] && pipP(x, z, w.p)) return true; }
+    for (var j = 0; j < WL.length; j++) {
+      var l = WL[j], b2 = l.bb; if (x < b2[0] || x > b2[2] || z < b2[1] || z > b2[3]) continue;
       for (var k = 1; k < l.p.length; k++) if (segDist(x, z, l.p[k - 1][0], l.p[k - 1][1], l.p[k][0], l.p[k][1]) < l.w / 2) return true;
     }
     return false;

@@ -58,6 +58,8 @@
     m.castShadow = !!shadow && G.Q.shadows; m.receiveShadow = G.Q.shadows;
     m.matrixAutoUpdate = false; m.updateMatrix();
     G.add(m);
+    // весь город — несколько слитых мешей: в проходе теней — только клетки у игрока (fgfx)
+    if (m.castShadow && G.shadowCells) G.shadowCells(m, 128);
     return m;
   }
   var col = new T.Color();
@@ -439,6 +441,8 @@
     im.instanceMatrix.needsUpdate = true;
     if (im.instanceColor) im.instanceColor.needsUpdate = true;
     root.add(im);
+    // экземпляры на весь город — в кадр только видимые (fgfx); светофорные огни — ниже снимаем: их цвет пишется по номеру
+    if (G.cullInst) G.cullInst(im);
     return im;
   }
   var tc = new T.Color();
@@ -524,6 +528,7 @@
   var sigLamps = inst(new T.BoxGeometry(0.3, 0.3, 0.1), lampMat, heads, function (o, h, i, im) {
     o.position.set(h[2] + Math.sin(h[4]) * 0.2, 4.0, h[3] + Math.cos(h[4]) * 0.2); im.setColorAt(i, tc.setHex(0x222222));
   }, false);
+  if (G.cullInst) G.cullInst(sigLamps, false);
 
   var CYCLE = 26;
   function signal(nodeI, axis) {

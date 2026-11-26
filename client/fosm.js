@@ -936,7 +936,8 @@
   }
   function finish(J) {
     var grp = new T.Group(); grp.name = "s" + J.key;
-    addMesh(grp, geoOf(J.A), facadeMat, true);
+    var houses = addMesh(grp, geoOf(J.A), facadeMat, true);
+    if (houses && G.shadowCells) G.shadowCells(houses, 128);            // в проходе теней — только клетки у игрока (fgfx)
     addMesh(grp, J.roads.length ? T.mergeGeometries(J.roads, false) : null, roadMat, false);
     var F = J.F; F.p = F.p.concat(J.R.p); F.n = F.n.concat(J.R.n); F.c = F.c.concat(J.R.c);
     addMesh(grp, geoOf(F), flatMat, false);
@@ -1043,6 +1044,9 @@
   var poolMat = new T.MeshBasicMaterial({ map: G.tex.glow, color: 0xffd9a8, transparent: true, opacity: 0, depthWrite: false, blending: T.AdditiveBlending });
   var POOL = new T.PlaneGeometry(13, 13).rotateX(-Math.PI / 2).translate(0, 0.13, 1.9);
   var pools = inst(POOL, poolMat, LAMPS_MAX);
+  // реквизит — без рисования за спиной: fgfx держит полный список и кладёт в кадр только видимые экземпляры
+  var CULLED = trees.concat([lamps, heads, poles, stops, metros, msigns, pools]);
+  if (G.cullInst) CULLED.forEach(G.cullInst);
   var mtx = new T.Matrix4(), qq = new T.Quaternion(), sc = new T.Vector3(), ps = new T.Vector3(), UPV = new T.Vector3(0, 1, 0), tcol = new T.Color();
   function nearest(list, max, fx, fz) {
     if (list.length <= max) return list;
@@ -1081,6 +1085,7 @@
     var me = nearest(gather(metroSrc), 120, fx, fz);
     place(metros, me, function (s) { qq.setFromAxisAngle(UPV, -s[2]); ps.set(s[0], 0.1, s[1]); });
     place(msigns, me, function (s) { qq.setFromAxisAngle(UPV, -s[2]); ps.set(s[0], 0.1, s[1]); });
+    if (G.instChanged) CULLED.forEach(G.instChanged);                   // полный список — в fgfx, в кадр идут видимые
   }
 
   /* ---- машины во дворах: места вдоль проездов и на стоянках; ставим через FC.cars, когда игрок рядом ---------- */

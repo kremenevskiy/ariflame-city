@@ -941,6 +941,8 @@
     }
     updateRain(dt);
     weatherTick();
+    cullInstances();
+    if (shadowJobs.length) shadowWork(FC.started ? 1.5 : 8);
     if (composer) {
       bloom.strength = 0.3 + FC.clock.night * 0.35;
       composer.render(dt);
@@ -1031,6 +1033,175 @@
   // точка в кадре камеры (с запасом по краям): машины и люди не появляются и не пропадают на глазах у игрока
   var vView = new T.Vector3();
   G.inView = function (x, y, z) { vView.set(x, y, z).project(camera); return vView.z < 1 && Math.abs(vView.x) < 1.15 && Math.abs(vView.y) < 1.15; };
+  /* ---- тени по клеткам ---------------------------------------------------------------------------------------
+   * Карта теней покрывает ±60–90 м вокруг игрока, а слитые меши (дома куска Минска 1 км, весь Флейм-Сити) в проходе
+   * теней рисовались целиком — до сотен тысяч треугольников каждый кадр (замер 26.11: тени — до 35% треугольников кадра).
+   * Для прохода теней у такого меша — «виды» по клеткам: те же позиции (буфер общий, память не растёт), свой отрезок
+   * индексов и своя сфера — камера солнца отбрасывает всё, что вне карты. Сам меш в тенях больше не участвует.
+   * Виды видимы только на время прохода теней (обёртка shadowMap.render): в three r160 списки основного прохода уже
+   * собраны к этому моменту, так что в кадр они не попадают. */
+  var shadowSets = [], shadowJobs = [];
+  // в сцене ли объект: у выгруженного куска Минска меш остаётся в своей группе, а группа — уже без родителя
+  function inScene(o) { while (o.parent) o = o.parent; return o === scene; }
+  // разбиение — кусочками по времени (≤ 1,5 мс за кадр): кусок Минска — до 300 тыс. треугольников, разом это рывок
+  G.shadowCells = function (mesh, cell) {
+    if (!Q.shadows || !mesh || !mesh.castShadow || !mesh.geometry) return;
+    var g = mesh.geometry, pos = g.attributes.position; if (!pos) return;
+    var idx = g.index ? g.index.array : null, nTri = ((idx ? idx.length : pos.count) / 3) | 0;
+    if (nTri < 256) return;                                             // мелкий меш — как было
+    shadowJobs.push({ mesh: mesh, cell: cell || 128, pos: pos, idx: idx, nTri: nTri, t: 0, ph: 0, tb: new Int32Array(nTri), keyOf: {}, B: [], fill: null, ni: null });
+  };
+  function shadowWork(budget) {
+    var t0 = performance.now();
+    while (shadowJobs.length && performance.now() - t0 < budget) {
+      var J = shadowJobs[0];
+      if (J.ph > 0 && !inScene(J.mesh)) { shadowJobs.shift(); continue; }    // кусок выгрузили раньше, чем доделали
+      var P = J.pos.array, st = J.pos.itemSize, idx = J.idx, nTri = J.nTri, end = Math.min(nTri, J.t + 8192), t;
+      if (J.ph === 0) {                                                   // треугольники → клетки, рамки клеток
+        for (t = J.t; t < end; t++) {
+          var a = idx ? idx[t * 3] : t * 3, b = idx ? idx[t * 3 + 1] : t * 3 + 1, c = idx ? idx[t * 3 + 2] : t * 3 + 2;
+          var x = (P[a * st] + P[b * st] + P[c * st]) / 3, z = (P[a * st + 2] + P[b * st + 2] + P[c * st + 2]) / 3;
+          var k = Math.floor(x / J.cell) * 8192 + Math.floor(z / J.cell), bi = J.keyOf[k];
+          if (bi === undefined) { bi = J.keyOf[k] = J.B.length; J.B.push({ n: 0, s: 0, x0: 1e9, y0: 1e9, z0: 1e9, x1: -1e9, y1: -1e9, z1: -1e9 }); }
+          J.tb[t] = bi; var o = J.B[bi]; o.n++;
+          for (var j = 0; j < 3; j++) {
+            var v = (j === 0 ? a : j === 1 ? b : c) * st, vx = P[v], vy = P[v + 1], vz = P[v + 2];
+            if (vx < o.x0) o.x0 = vx; if (vx > o.x1) o.x1 = vx; if (vy < o.y0) o.y0 = vy; if (vy > o.y1) o.y1 = vy;
+            if (vz < o.z0) o.z0 = vz; if (vz > o.z1) o.z1 = vz;
+          }
+        }
+        J.t = end;
+        if (end >= nTri) {
+          if (J.B.length < 2) { shadowJobs.shift(); continue; }
+          J.fill = new Int32Array(J.B.length); var s0 = 0;
+          for (var i = 0; i < J.B.length; i++) { J.B[i].s = s0; J.fill[i] = s0; s0 += J.B[i].n; }
+          J.ni = J.pos.count > 65535 ? new Uint32Array(nTri * 3) : new Uint16Array(nTri * 3);
+          J.ph = 1; J.t = 0;
+        }
+      } else if (J.ph === 1) {                                            // индексы по клеткам подряд
+        var ni = J.ni, tb = J.tb, fill = J.fill;
+        for (t = J.t; t < end; t++) {
+          var w = fill[tb[t]]++ * 3;
+          if (idx) { ni[w] = idx[t * 3]; ni[w + 1] = idx[t * 3 + 1]; ni[w + 2] = idx[t * 3 + 2]; } else { ni[w] = t * 3; ni[w + 1] = t * 3 + 1; ni[w + 2] = t * 3 + 2; }
+        }
+        J.t = end;
+        if (end >= nTri) J.ph = 2;
+      } else {                                                            // виды: общий буфер позиций, свой отрезок
+        shadowJobs.shift();
+        var mesh = J.mesh; if (!inScene(mesh)) continue;
+        var index = new T.BufferAttribute(J.ni, 1), views = [];
+        J.B.forEach(function (o) {
+          var vg = new T.BufferGeometry();
+          vg.setAttribute("position", J.pos); vg.setIndex(index); vg.setDrawRange(o.s * 3, o.n * 3);
+          vg.boundingSphere = new T.Sphere(new T.Vector3((o.x0 + o.x1) / 2, (o.y0 + o.y1) / 2, (o.z0 + o.z1) / 2),
+            Math.hypot(o.x1 - o.x0, o.y1 - o.y0, o.z1 - o.z0) / 2 + 0.5);
+          var m = new T.Mesh(vg, mesh.material);
+          m.castShadow = true; m.receiveShadow = false; m.visible = false; m.matrixAutoUpdate = false;
+          m.matrix.copy(mesh.matrix); m.userData.shadowView = true;
+          mesh.parent.add(m); views.push(m);
+        });
+        mesh.castShadow = false;
+        shadowSets.push({ mesh: mesh, views: views });
+      }
+    }
+  }
+  // виды живут с мешем: меш убран со сцены (кусок Минска выгружен) — набор забываем
+  var smRender = renderer.shadowMap.render, smOn = [];
+  renderer.shadowMap.render = function (lights, sc, cam) {
+    smOn.length = 0;
+    for (var i = shadowSets.length - 1; i >= 0; i--) {
+      var S = shadowSets[i], m = S.mesh, vis = m.visible, p = m;
+      while (p.parent) { p = p.parent; if (!p.visible) vis = false; }
+      if (p !== sc) { if (p !== scene) shadowSets.splice(i, 1); continue; }   // выгружен — забываем; другая сцена — пропуск
+      if (!vis) continue;
+      for (var j = 0; j < S.views.length; j++) { S.views[j].visible = true; smOn.push(S.views[j]); }
+    }
+    try { smRender.call(this, lights, sc, cam); }
+    finally { for (var k = 0; k < smOn.length; k++) smOn[k].visible = false; }
+  };
+
+  /* ---- реквизит без лишнего: экземпляры только в кадре ----------------------------------------------------------
+   * Деревья, фонари, опоры, остановки — общие InstancedMesh на сотни метров вокруг, без отсечения: рисовались и за
+   * спиной (замер 26.11: реквизит — половина треугольников кадра на телефоне, ~22% времени видеокарты). Здесь держим
+   * полный список экземпляров и в буфер меша кладём только те, что в кадре камеры с запасом 14° и 4 м (и всё в радиусе
+   * карты теней, если меш даёт тень: тень от дерева за спиной падает в кадр). Пересчёт — только когда камера сдвинулась
+   * на 2 м или повернулась на 3°, до отрисовки того же кадра — поворот не «проявляет» деревья на глазах.
+   * Владелец меша после своей перестановки зовёт G.instChanged(меш). */
+  var cullSets = [], cullDirty = true, cullPos = new T.Vector3(1e9, 0, 0), cullDir = new T.Vector3(), cullFov = 0, cullAsp = 0;
+  // плоскости кадра — свои (в нашей урезанной сборке three нет Frustum): a, b, c, d × 6, нормали внутрь
+  var PL = new Float32Array(24), cM = new T.Matrix4(), cV = new T.Vector3();
+  function planesOf(m) {
+    var e = m.elements, r = [[e[3] - e[0], e[7] - e[4], e[11] - e[8], e[15] - e[12]], [e[3] + e[0], e[7] + e[4], e[11] + e[8], e[15] + e[12]],
+      [e[3] + e[1], e[7] + e[5], e[11] + e[9], e[15] + e[13]], [e[3] - e[1], e[7] - e[5], e[11] - e[9], e[15] - e[13]],
+      [e[3] - e[2], e[7] - e[6], e[11] - e[10], e[15] - e[14]], [e[3] + e[2], e[7] + e[6], e[11] + e[10], e[15] + e[14]]];
+    for (var i = 0; i < 6; i++) { var l = Math.hypot(r[i][0], r[i][1], r[i][2]) || 1; for (var j = 0; j < 4; j++) PL[i * 4 + j] = r[i][j] / l; }
+  }
+  G.cullInst = function (mesh, on) {
+    if (!mesh || !mesh.isInstancedMesh) return;
+    if (on === false) {                                                  // снять: вернуть полный список экземпляров
+      var e0 = mesh.userData.cull; if (!e0) return;
+      cullSets.splice(cullSets.indexOf(e0), 1); mesh.userData.cull = null;
+      mesh.instanceMatrix.array.set(e0.M.subarray(0, e0.n * 16)); if (mesh.instanceColor && e0.C) mesh.instanceColor.array.set(e0.C.subarray(0, e0.n * 3));
+      mesh.count = e0.n; mesh.instanceMatrix.clearUpdateRanges(); mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) { mesh.instanceColor.clearUpdateRanges(); mesh.instanceColor.needsUpdate = true; }
+      return;
+    }
+    mesh.frustumCulled = false;
+    var g = mesh.geometry; if (!g.boundingSphere) g.computeBoundingSphere();
+    var e = { m: mesh, n: 0, M: null, C: null, S: null, cap: 0 };
+    mesh.userData.cull = e; cullSets.push(e);
+    if (mesh.count) G.instChanged(mesh);
+  };
+  G.instChanged = function (mesh) {
+    var e = mesh && mesh.userData.cull; if (!e) return;
+    var n = mesh.count, A = mesh.instanceMatrix.array, IC = mesh.instanceColor;
+    if (e.cap < n) { e.cap = Math.max(n, 16); e.M = new Float32Array(e.cap * 16); e.S = new Float32Array(e.cap * 4); e.C = IC ? new Float32Array(e.cap * 3) : null; }
+    if (IC && !e.C) e.C = new Float32Array(e.cap * 3);
+    e.M.set(A.subarray(0, n * 16)); if (IC) e.C.set(IC.array.subarray(0, n * 3));
+    var bs = mesh.geometry.boundingSphere, c = bs.center, r = bs.radius;
+    for (var i = 0; i < n; i++) {
+      var o = i * 16, M = e.M;
+      var sx = Math.hypot(M[o], M[o + 1], M[o + 2]), sy = Math.hypot(M[o + 4], M[o + 5], M[o + 6]), sz = Math.hypot(M[o + 8], M[o + 9], M[o + 10]);
+      e.S[i * 4] = M[o] * c.x + M[o + 4] * c.y + M[o + 8] * c.z + M[o + 12];
+      e.S[i * 4 + 1] = M[o + 1] * c.x + M[o + 5] * c.y + M[o + 9] * c.z + M[o + 13];
+      e.S[i * 4 + 2] = M[o + 2] * c.x + M[o + 6] * c.y + M[o + 10] * c.z + M[o + 14];
+      e.S[i * 4 + 3] = r * Math.max(sx, sy, sz);
+    }
+    e.n = n; cullDirty = true;
+  };
+  function cullInstances() {
+    if (!cullSets.length) return;
+    camera.updateMatrixWorld();
+    cV.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    if (!cullDirty && camera.position.distanceToSquared(cullPos) < 4 && cV.dot(cullDir) > 0.9986 && camera.fov === cullFov && camera.aspect === cullAsp) return;
+    cullDirty = false; cullPos.copy(camera.position); cullDir.copy(cV); cullFov = camera.fov; cullAsp = camera.aspect;
+    cM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); planesOf(cM);
+    var cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+    var f = G.focus || camera.position, SR = SC * 1.3, SR2 = SR * SR, MARG = 0.25;   // tan 14°
+    for (var s = 0; s < cullSets.length; s++) {
+      var e = cullSets[s], m = e.m; if (!inScene(m)) { if (!m.parent) cullSets.splice(s--, 1); continue; }
+      var A = m.instanceMatrix.array, IC = m.instanceColor, S = e.S, k = 0, keepSh = m.castShadow && Q.shadows;
+      for (var i = 0; i < e.n; i++) {
+        var x = S[i * 4], y = S[i * 4 + 1], z = S[i * 4 + 2], r = S[i * 4 + 3], ok = true;
+        if (!(keepSh && (x - f.x) * (x - f.x) + (z - f.z) * (z - f.z) < SR2)) {
+          var pad = r + 4 + MARG * Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz));
+          for (var p = 0; p < 24; p += 4) { if (PL[p] * x + PL[p + 1] * y + PL[p + 2] * z + PL[p + 3] < -pad) { ok = false; break; } }
+        }
+        if (!ok) continue;
+        // буфер меша — выход прошлого отбора: копируем из полного списка всегда
+        for (var q = 0; q < 16; q++) A[k * 16 + q] = e.M[i * 16 + q];
+        if (IC) { IC.array[k * 3] = e.C[i * 3]; IC.array[k * 3 + 1] = e.C[i * 3 + 1]; IC.array[k * 3 + 2] = e.C[i * 3 + 2]; }
+        k++;
+      }
+      m.count = k;
+      if (k) {
+        m.instanceMatrix.clearUpdateRanges(); m.instanceMatrix.addUpdateRange(0, k * 16); m.instanceMatrix.needsUpdate = true;
+        if (IC) { IC.clearUpdateRanges(); IC.addUpdateRange(0, k * 3); IC.needsUpdate = true; }
+      }
+    }
+  }
+  G.cullNow = function () { cullDirty = true; };
+
   G.add = add; G.frame = frame; G.resize = resize; G.setQuality = setQuality; G.weather = weather;
   G.calm = function (sec) { nextWeatherAt = Date.now() + sec * 1000; weather.target = 0; weather.rain = 0; };
   G.mat = { facade: facadeMaterial, road: roadMaterial, water: waterMaterial, std: std, ground: function () { return groundMaterial(false); },

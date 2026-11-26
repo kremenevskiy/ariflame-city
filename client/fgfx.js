@@ -10,17 +10,30 @@
   "use strict";
   var FC = global.FC, T = global.THREE;
 
-  var qs = (location.search.match(/[?&]q=(low|mid|high)/) || [])[1];
+  /* Уровни графики, как в играх: «низкая» (экономно), «средняя», «высокая», «ультра». Модули видят Q.level —
+   * low | mid | high («ультра» для них — high: та же толпа и дальность), сам рендер — Q.tier. Выбор в «Настройках»
+   * телефона запоминается (localStorage fc.q); без выбора — телефон «средняя», компьютер «высокая». ?q=… — для замеров. */
+  var qs = (location.search.match(/[?&]q=(low|mid|high|ultra)/) || [])[1];
   var MINSK = global.FC_CITY === "minsk", D2R = Math.PI / 180;
   // Telegram на Android сам говорит класс телефона в user agent: «… ; LOW)» / AVERAGE / HIGH — стартуем с него
   var tgClass = (navigator.userAgent.match(/Telegram-Android\/[^ ]+ \([^)]*;\s*(LOW|AVERAGE|HIGH)\)/) || [])[1];
-  var Q = { level: qs || (tgClass === "LOW" ? "low" : tgClass === "HIGH" ? "mid" : FC.mobile ? "mid" : "high") };
+  var qSaved = null;
+  try { qSaved = global.localStorage.getItem("fc.q"); } catch (e) { qSaved = null; }
+  if (!/^(low|mid|high|ultra)$/.test(qSaved || "")) qSaved = null;
+  var Q = { tier: qs || qSaved || (tgClass === "LOW" ? "low" : tgClass === "HIGH" ? "mid" : FC.mobile ? "mid" : "high") };
   function applyQ() {
+    var t = Q.tier, ultra = t === "ultra";
+    Q.level = ultra ? "high" : t;
     Q.shadows = Q.level !== "low";
-    Q.shadowSize = Q.level === "high" ? 2048 : 1024;
+    Q.shadowSize = ultra ? 4096 : Q.level === "high" ? 2048 : 1024;   // «ультра» — та же площадь теней, вдвое чётче
     Q.bloom = Q.level === "high";
-    Q.ratio = Math.min(global.devicePixelRatio || 1, Q.level === "high" ? 1.75 : Q.level === "mid" ? 1.35 : 1);
-    Q.far = Q.level === "low" ? 650 : Q.level === "mid" ? 900 : 1300;
+    Q.ratio = Math.min(global.devicePixelRatio || 1, ultra ? 2 : Q.level === "high" ? 1.75 : Q.level === "mid" ? 1.35 : 1);
+    Q.msaa = 4;
+    // для замеров: ?pr=1.5 — масштаб рендера, ?msaa=2 — отсчёты сглаживания буфера свечения
+    var prQ = +((global.location.search.match(/[?&]pr=([\d.]+)/) || [])[1] || 0), msQ = (global.location.search.match(/[?&]msaa=(\d)/) || [])[1];
+    if (prQ) Q.ratio = Math.min(global.devicePixelRatio || 1, prQ);
+    if (msQ != null) Q.msaa = +msQ;
+    Q.far = Q.level === "low" ? 650 : Q.level === "mid" ? 900 : ultra ? 1500 : 1300;
     Q.peds = Q.level === "low" ? 60 : Q.level === "mid" ? 110 : 180;     // v2: «город живее» — плотнее толпа
     Q.cars = Q.level === "low" ? 18 : Q.level === "mid" ? 30 : 46;
   }
@@ -29,7 +42,10 @@
   var canvas = document.getElementById("cv");
   // powerPreference «default», не «high-performance»: на ноутбуках с двумя видеокартами «высокая» включала дискретную —
   // горячо и шумно ради кадров, которых и так хватает (частота кадров ограничена ниже, разрешение подстраивается само)
-  var renderer = new T.WebGLRenderer({ canvas: canvas, antialias: Q.level !== "low", powerPreference: "default" });
+  // Со свечением (high) сглаживает свой буфер композера (MSAA ×4) — холст со своим MSAA сглаживал ещё раз
+  // полноэкранный квадрат итога: лишний проход на 4 млн пикселей с 4 отсчётами. Холст — без сглаживания.
+  var canvasAA = Q.level !== "low" && !(Q.bloom && T.EffectComposer);
+  var renderer = new T.WebGLRenderer({ canvas: canvas, antialias: canvasAA, powerPreference: "default" });
   renderer.setPixelRatio(Q.ratio);
   renderer.setSize(global.innerWidth, global.innerHeight, false);
   renderer.outputColorSpace = T.SRGBColorSpace;
@@ -114,7 +130,9 @@
       "  gl_FragColor = vec4(col, 1.0);",
       "}"].join("\n")
   }));
-  sky.frustumCulled = false; sky.renderOrder = -10;
+  // небо — последним среди непрозрачных (глубина = 1, проходит только там, где ничего не нарисовано): на Android
+  // (Adreno, Mali) шейдер неба больше не считается под каждым домом; Apple и так отбрасывает закрытое
+  sky.frustumCulled = false; sky.renderOrder = 1e6;
   sky.scale.setScalar(Q.far + 200);
   scene.add(sky);
 
@@ -272,11 +290,11 @@
 
   /* ---- свечение (только high) ------------------------------------------------------------------------------- */
   var composer = null, bloom = null;
-  if (Q.bloom && T.EffectComposer) {
+  function makeComposer() {
     // свой буфер со сглаживанием (MSAA ×4): композер рисует сцену не в холст, и сглаживание холста (antialias) терялось —
     // на «высоком» качестве края домов, машин и проводов были лесенкой
     var dbs = renderer.getDrawingBufferSize(new T.Vector2());
-    var rt = new T.WebGLRenderTarget(dbs.x, dbs.y, { type: T.HalfFloatType, samples: renderer.capabilities.isWebGL2 ? 4 : 0 });
+    var rt = new T.WebGLRenderTarget(dbs.x, dbs.y, { type: T.HalfFloatType, samples: renderer.capabilities.isWebGL2 ? Q.msaa : 0 });
     composer = new T.EffectComposer(renderer, rt);
     composer.addPass(new T.RenderPass(scene, camera));
     bloom = new T.UnrealBloomPass(new T.Vector2(global.innerWidth / 2, global.innerHeight / 2), 0.45, 0.45, 0.92);
@@ -284,7 +302,13 @@
     var outPass = new T.OutputPass();
     composer.addPass(outPass);
     safeHdr(bloom.materialHighPassFilter, outPass.material);
+    // свечение — с четверти разрешения, а не с половины: оно и так размыто пятью уровнями, а стоило ~треть кадра
+    var bset = bloom.setSize;
+    bloom.setSize = function (w, h) { bset.call(this, Math.max(2, Math.round(w / 2)), Math.max(2, Math.round(h / 2))); };
+    var pr = renderer.getPixelRatio();
+    composer.setPixelRatio(pr); composer.setSize(global.innerWidth, global.innerHeight);
   }
+  if (Q.bloom && T.EffectComposer) makeComposer();
   /* Блик солнца на гладком (стекло фасадов и машин, мокрый асфальт — шероховатость ~0,05) даёт тысячи единиц яркости;
    * в буфере половинной точности это бесконечность. Свечение растягивало её по уровням размытия в прямоугольники,
    * тонмаппинг делал из бесконечности NaN — мигающие чёрные блоки в полэкрана (23.11, Новая Боровая). Чистим вход
@@ -551,7 +575,9 @@
           "    if (inWin > 0.01) {",
           "      vec3 Vw = normalize(vFcP - cameraPosition); vec3 tng = vec3(vFcN.z, 0.0, -vFcN.x);",
           "      vec3 vl = vec3(dot(Vw, tng), Vw.y, -dot(Vw, vFcN));",
-          "      rm = mkRoom(vec2(fu * cw, fv * Fh), vl, vec2(cw, Fh), wr);",
+          // вдали (окно в 2–3 пикселя) объём комнаты не виден: вместо трассировки — цвет её стены, плавно по far
+          "      vec3 rmF = mix(vec3(0.62,0.55,0.44), vec3(0.47,0.52,0.56), fract(wr * 7.31)) * 0.76;",
+          "      rm = far > 0.95 ? rmF : mix(mkRoom(vec2(fu * cw, fv * Fh), vl, vec2(cw, Fh), wr), rmF, far);",
           "      float curtain = step(0.55, fract(wr * 13.7)) * step(0.5, fract(fu * 2.0 + 0.25 * wr));",
           "      rm = mix(rm, mix(vec3(0.78, 0.72, 0.6), vec3(0.6, 0.66, 0.7), fract(wr * 5.3)), curtain * 0.6);",
           "      float fres = pow(1.0 - max(dot(-Vw, vFcN), 0.0), 3.0);",
@@ -943,26 +969,31 @@
     weatherTick();
     cullInstances();
     if (shadowJobs.length) shadowWork(FC.started ? 1.5 : 8);
+    gpuBegin();
     if (composer) {
       bloom.strength = 0.3 + FC.clock.night * 0.35;
       composer.render(dt);
     } else renderer.render(scene, camera);
+    gpuEnd();
     holdDrawn = holdN > 0;
     // авто-качество: первые 8 секунд
     fpsT += dt; fpsN++;
-    if (!downgraded && !qs && fpsT > 2) {
+    if (!downgraded && !qs && !qSaved && fpsT > 2) {
       var fps = fpsN / fpsT; fpsT = 0; fpsN = 0;
-      if (fps < 32 && performance.now() - started < 12000 && Q.level !== "low") { downgraded = true; setQuality(Q.level === "high" ? "mid" : "low"); }
+      if (fps < 32 && performance.now() - started < 12000 && Q.tier !== "low") { downgraded = true; setQuality(Q.tier === "ultra" ? "high" : Q.tier === "high" ? "mid" : "low"); }
     }
     dynRes();
     fpsTick();
   }
-  /* ?fps — счётчик в углу: кадры в секунду, худший кадр за секунду, качество и масштаб рендера (для жалоб «лагает»). */
-  var fpsBox = null, fpsB = { t: 0, n: 0, worst: 0, last: 0 };
+  /* ?fps — счётчик в углу (для жалоб «лагает» и «греется»): кадры в секунду и худший кадр; работа кадра — JS (системы
+   * и рендер, мс), GPU (мс, где браузер даёт таймер; на iPhone — «—»), вызовы отрисовки и треугольники за кадр целиком
+   * (с тенями); качество, свечение, масштаб рендера, ограничение частоты. */
+  var fpsBox = null, fpsB = { t: 0, n: 0, worst: 0, last: 0, js: 0, gpu: 0, gn: 0, calls: 0, tris: 0 };
   function fpsTick() {
     if (fpsBox === null) {
       fpsBox = false;
       if (!/[?&]fps\b/.test(global.location.search || "")) return;
+      renderer.info.autoReset = false;
       fpsBox = document.createElement("div");
       fpsBox.style.cssText = "position:fixed;left:50%;top:6px;transform:translateX(-50%);z-index:99;font:600 11px/1.35 system-ui;color:#fff;" +
         "background:rgba(0,0,0,.6);padding:3px 8px;border-radius:6px;pointer-events:none;white-space:pre;text-align:center";
@@ -970,32 +1001,74 @@
     }
     if (!fpsBox) return;
     var now = performance.now(), d = now - fpsB.last; fpsB.last = now; fpsB.n++; fpsB.t += d; if (d > fpsB.worst) fpsB.worst = d;
+    var inf = renderer.info.render; fpsB.calls += inf.calls; fpsB.tris += inf.triangles; inf.calls = 0; inf.triangles = 0;
+    fpsB.js += FC.loopMs || 0; if (tq && gpuLast) { fpsB.gpu += gpuLast; fpsB.gn++; }
     if (fpsB.t < 1000) return;
-    fpsBox.textContent = Math.round(fpsB.n * 1000 / fpsB.t) + " к/с · худший кадр " + Math.round(fpsB.worst) + " мс\n" +
-      Q.level + (composer ? " + свечение" : "") + " · рендер ×" + (Q.ratio * drScale).toFixed(2);
-    fpsB.t = fpsB.n = fpsB.worst = 0;
+    var n = fpsB.n;
+    fpsBox.textContent = Math.round(n * 1000 / fpsB.t) + " к/с · худший кадр " + Math.round(fpsB.worst) + " мс\n" +
+      "JS " + (fpsB.js / n).toFixed(1) + " мс · GPU " + (fpsB.gn ? (fpsB.gpu / fpsB.gn).toFixed(1) + " мс" : "—") +
+      " · " + Math.round(fpsB.calls / n) + " вызовов · " + Math.round(fpsB.tris / n / 1000) + "k тр\n" +
+      Q.tier + (composer && bloom && bloom.enabled ? " + свечение" : "") + " · рендер ×" + (Q.ratio * drScale).toFixed(2) +
+      " · " + (capFps ? capFps + " к/с" : "без ограничения");
+    fpsB.t = fpsB.n = fpsB.worst = fpsB.js = fpsB.gpu = fpsB.gn = fpsB.calls = fpsB.tris = 0;
   }
-  /* Динамическое разрешение (всю игру, не только старт): кадры тяжёлые 2 с подряд (< ~36 к/с) — рендер на 10% мельче,
-     до 0,6 от базы; лёгкие (> ~66 к/с) два окна подряд — обратно. Картинка чуть мягче, а движение плавное на слабом телефоне.
-     Меняем редко (смена размера буфера — сама по себе рывок); ?q=… или ?dr=off — без подстройки. */
-  var drScale = 1, drT = 0, drN = 0, drMs = 0, drGood = 0, drLast = performance.now(), drOff = /[?&]dr=off/.test(global.location.search || "");
+  /* Динамическое разрешение (всю игру): мерим работу, а не промежутки между кадрами — при ограничении 60 к/с
+   * промежуток всегда ~16,7 мс, и прежняя подстройка, однажды сбавив чёткость, не возвращала её. Окно 2 с:
+   *  • есть таймер GPU (EXT_disjoint_timer_query_webgl2: Chrome на компьютере, часть Android) — держим видеокарту
+   *    занятой не больше ~70% кадра: дольше — рендер на 10% мельче (до 0,6 от базы), меньше 40% два окна подряд — обратно;
+   *  • таймера нет (iPhone) — по пропущенным кадрам: больше 20% кадров опоздали — мельче, опозданий нет два окна — обратно.
+   * Меняем редко (смена размера буфера — сама по себе рывок); ?q=… или ?dr=off — без подстройки. */
+  var drScale = 1, drT = 0, drN = 0, drMiss = 0, drGood = 0, drLast = performance.now(), drOff = /[?&]dr=off/.test(global.location.search || "");
+  var gl = renderer.getContext(), tq = null;
+  try { tq = global.__perf ? null : gl.getExtension("EXT_disjoint_timer_query_webgl2"); } catch (e) { tq = null; }   // __perf — стенд tools/perf: у него свой таймер
+  var tqCur = null, tqPend = [], gpuSum = 0, gpuN = 0, gpuLast = 0;
+  // таймер GPU вокруг рендера кадра: результат читаем через кадр-два, без ожидания
+  function gpuBegin() {
+    if (!tq || tqCur) return;
+    try { tqCur = gl.createQuery(); gl.beginQuery(tq.TIME_ELAPSED_EXT, tqCur); } catch (e) { tq = null; tqCur = null; }
+  }
+  function gpuEnd() {
+    if (!tqCur) return;
+    gl.endQuery(tq.TIME_ELAPSED_EXT); tqPend.push(tqCur); tqCur = null;
+    var dis = gl.getParameter(tq.GPU_DISJOINT_EXT);
+    while (tqPend.length && gl.getQueryParameter(tqPend[0], gl.QUERY_RESULT_AVAILABLE)) {
+      var q = tqPend.shift(), ns = gl.getQueryParameter(q, gl.QUERY_RESULT); gl.deleteQuery(q);
+      if (!dis) { gpuLast = ns / 1e6; gpuSum += gpuLast; gpuN++; }
+    }
+    if (tqPend.length > 8) { tqPend.forEach(function (x) { gl.deleteQuery(x); }); tqPend.length = 0; }
+  }
+  G.gpuMs = function () { return tq ? gpuLast : null; };
   function dynRes() {
     var now = performance.now(), ms = now - drLast; drLast = now;
-    if (drOff || qs || document.hidden || FC.paused || ms > 250) return;      // пауза/свёрнуто — не мерим
-    drMs += ms; drN++; drT += ms;
+    if (drOff || qs || document.hidden || FC.paused || holdN > 0 || ms > 250) return;      // пауза/свёрнуто — не мерим
+    var iv = 1000 / (capFps || 60);
+    drN++; drT += ms; if (ms > iv * 1.5) drMiss++;
     if (drT < 2000) return;
-    var avg = drMs / drN; drT = 0; drN = 0; drMs = 0;
+    var miss = drMiss / Math.max(1, drN), gpu = gpuN >= 10 ? gpuSum / gpuN : -1;
+    drT = 0; drN = 0; drMiss = 0; gpuSum = 0; gpuN = 0;
+    var heavy = gpu >= 0 ? gpu > iv * 0.7 || miss > 0.2 : miss > 0.2;
+    var light = gpu >= 0 ? gpu < iv * 0.4 && miss < 0.05 : miss < 0.03;
     var next = drScale;
-    if (avg > 28 && drScale > 0.6) { next = Math.max(0.6, drScale - 0.1); drGood = 0; }
-    else if (avg < 15 && drScale < 1) { if (++drGood >= 2) { next = Math.min(1, drScale + 0.1); drGood = 0; } }
+    if (heavy && drScale > 0.6) { next = Math.max(0.6, Math.round((drScale - 0.1) * 10) / 10); drGood = 0; }
+    else if (light && drScale < 1) { if (++drGood >= 2) { next = Math.min(1, Math.round((drScale + 0.1) * 10) / 10); drGood = 0; } }
     else drGood = 0;
     if (next !== drScale) { drScale = next; renderer.setPixelRatio(Q.ratio * drScale); if (composer && composer.setPixelRatio) composer.setPixelRatio(Q.ratio * drScale); resize(); }
   }
-  function setQuality(level) {
-    Q.level = level; applyQ();
+  function setQuality(level, save) {
+    if (!/^(low|mid|high|ultra)$/.test(level)) return;
+    Q.tier = level; applyQ();
+    if (save) { try { global.localStorage.setItem("fc.q", level); } catch (e) { /* приватное окно */ } qSaved = level; }
+    if (sun.shadow.mapSize.x !== Q.shadowSize) {                    // карта теней другого размера — пересоздать
+      sun.shadow.mapSize.set(Q.shadowSize, Q.shadowSize);
+      if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
+    }
     renderer.setPixelRatio(Q.ratio * (typeof drScale === "number" ? drScale : 1));
+    if (composer) composer.setPixelRatio(renderer.getPixelRatio());
     renderer.shadowMap.enabled = Q.shadows; sun.castShadow = Q.shadows;
-    if (!Q.bloom) composer = null;
+    // без свечения: холст со сглаживанием — рисуем прямо в него; холст без сглаживания (создан под «высокое») —
+    // композер остаётся ради MSAA своего буфера, только свечение выключено
+    if (!Q.bloom) { if (canvasAA) composer = null; else if (bloom) bloom.enabled = false; }
+    else if (T.EffectComposer) { if (!composer) makeComposer(); else if (bloom) bloom.enabled = true; }
     scene.fog.far = Q.far; camera.far = Q.far + 400; camera.updateProjectionMatrix();
     sky.scale.setScalar(Q.far + 200);
     resize();

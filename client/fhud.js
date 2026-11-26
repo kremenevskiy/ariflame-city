@@ -619,7 +619,7 @@
   addApp({ id: "map", icon: "🗺️", name: "Карта", color: "#2a6f97", order: 1, direct: openMap });
   addApp({ id: "settings", icon: "⚙️", name: "Настройки", color: "#495057", order: 99, render: function (b) {
     b.innerHTML = "<div class='list'>" +
-      "<div class='row'><span>Графика</span><select id='q-sel'><option value='low'>низкая</option><option value='mid'>средняя</option><option value='high'>высокая</option></select></div>" +
+      "<div class='row'><span>Графика</span><select id='q-sel'><option value='low'>низкая · экономно</option><option value='mid'>средняя</option><option value='high'>высокая</option><option value='ultra'>ультра</option></select></div>" +
       "<div class='row'><span>Звук</span><button type='button' id='snd'>" + (FC.audio && FC.audio.muted ? "выкл" : "вкл") + "</button></div>" +
       "<div class='row'><span>Время</span><button type='button' id='skip'>промотать 3 часа</button></div>" +
       "<div class='row'><span>Управление</span><p class='quiet'>WASD — идти, Shift — бег, пробел — прыжок/ручник, E — войти/действие, F — сесть в машину, ЛКМ/Q — удар, M — карта, P/Tab — телефон, H — гудок, C — камера</p></div>" +
@@ -629,14 +629,15 @@
       "<div class='row'><span>Карта Минска</span><p class='quiet'>© участники OpenStreetMap, данные — лицензия ODbL 1.0</p></div>" +
       "<div class='row'><span>Движок</span><p class='quiet'>three.js r160, лицензия MIT · игра — открытый код, FSL-1.1-MIT</p></div>" +
       "<div class='row'><span>Прогресс</span><button type='button' id='reset' class='danger'>начать заново</button></div></div>";
-    var sel = b.querySelector("#q-sel"); sel.value = G.Q.level;
+    var sel = b.querySelector("#q-sel"); sel.value = G.Q.tier || G.Q.level;
     var cs = b.querySelector("#city-sel"); cs.value = FC.city || "flame";
     cs.addEventListener("change", function () {
       try { global.localStorage.setItem("fc.city", cs.value); } catch (e) { /* приватное окно */ }
       if (FC.saveNow) FC.saveNow();
       var u = new URL(global.location.href); u.searchParams.set("city", cs.value); global.location.href = u.toString();
     });
-    sel.addEventListener("change", function () { G.setQuality(sel.value); });
+    // выбор запоминается; свет, тени, сглаживание и чёткость — сразу, дальность города и толпа — со следующего входа
+    sel.addEventListener("change", function () { G.setQuality(sel.value, true); toast("Графика: " + sel.options[sel.selectedIndex].text + " · дальность и толпа — после перезапуска", "", 3); });
     b.querySelector("#snd").addEventListener("click", function (e) { if (FC.audio) { FC.audio.setMuted(!FC.audio.muted); e.target.textContent = FC.audio.muted ? "выкл" : "вкл"; } });
     b.querySelector("#skip").addEventListener("click", function () { FC.setHour(FC.clock.hour + 3); toast("⏩ +3 часа", "", 1.5); });
     b.querySelector("#reset").addEventListener("click", function () { if (confirm("Стереть прогресс и начать сначала?")) { FC.resetSave(); location.reload(); } });

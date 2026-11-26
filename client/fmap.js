@@ -399,31 +399,39 @@
   });
 
   /* ---- столкновения: сетка 40 м со списками зданий ------------------------------------------------------------- */
-  var CELL = 40, GRID = {};
-  function cellKey(cx, cz) { return cx + "," + cz; }
+  // ключ клетки — целое число (было «gx,gz» строкой: новая строка на каждую клетку каждого запроса, ~200 запросов на кадр)
+  var CELL = 40, GRID = new Map();
+  function cellKey(cx, cz) { return (cx + 32768) * 65536 + cz + 32768; }
   function gridAdd(item, x0, x1, z0, z1) {
     for (var gx = Math.floor(x0 / CELL); gx <= Math.floor(x1 / CELL); gx++) {
       for (var gz = Math.floor(z0 / CELL); gz <= Math.floor(z1 / CELL); gz++) {
-        (GRID[cellKey(gx, gz)] || (GRID[cellKey(gx, gz)] = [])).push(item);
+        var k = cellKey(gx, gz), l = GRID.get(k);
+        if (!l) GRID.set(k, l = []);
+        l.push(item);
       }
     }
   }
-  BUILDINGS.forEach(function (B) { gridAdd(B, B.x - B.w / 2, B.x + B.w / 2, B.z - B.d / 2, B.z + B.d / 2); });
+  BUILDINGS.forEach(function (B) { B._nq = 0; gridAdd(B, B.x - B.w / 2, B.x + B.w / 2, B.z - B.d / 2, B.z + B.d / 2); });
   var PROPS = [];                                    // столбы и деревья — круги (их ставит fbuild через addProp)
   function addProp(x, z, r, kind) {
-    var p = { prop: true, x: x, z: z, r: r, kind: kind };
+    var p = { prop: true, x: x, z: z, r: r, kind: kind, _nq: 0 };
     PROPS.push(p); gridAdd(p, x - r, x + r, z - r, z + r);
     return p;
   }
-  function near(x, z, r) {
-    var out = [], seen = new Set();
+  function near(x, z, r) { var out = []; nearInto(x, z, r, out); return out; }
+  /* То же, что near, но в готовый массив out (вернёт, сколько записано): для collide и buildingAt, что зовут на каждый
+     шаг людей и машин. Повторы (дом в нескольких клетках) отсекает метка запроса на самом объекте вместо нового Set на
+     каждый вызов; порядок — тот же, что у near. */
+  var nearQ = 0, scratch = [], scratch2 = [];
+  function nearInto(x, z, r, out) {
+    var n = 0, q = ++nearQ;
     for (var gx = Math.floor((x - r) / CELL); gx <= Math.floor((x + r) / CELL); gx++) {
       for (var gz = Math.floor((z - r) / CELL); gz <= Math.floor((z + r) / CELL); gz++) {
-        var l = GRID[cellKey(gx, gz)]; if (!l) continue;
-        for (var i = 0; i < l.length; i++) if (!seen.has(l[i])) { seen.add(l[i]); out.push(l[i]); }
+        var l = GRID.get(cellKey(gx, gz)); if (!l) continue;
+        for (var i = 0; i < l.length; i++) { var o = l[i]; if (o._nq !== q) { o._nq = q; out[n++] = o; } }
       }
     }
-    return out;
+    return n;                                        // хвост out за n — от прошлых запросов, его не читают
   }
   /* Крыши (ходьба по ним — fmain): башня ступенями (fbuild: стекло выше 90 м, обе стороны шире 22 м) — подиум до 0,18 h,
      ствол с отступом 3 м до 0,8 h, верхушка с отступом 6 м; остальные — плоская крыша на h. */
@@ -446,7 +454,7 @@
   function roofAt(x, z, yMax) {
     var gx = Math.floor(x / CELL), gz = Math.floor(z / CELL), best = -1e9, rList = null, i;
     for (i = 0; i < 4; i++) if (rc[i].gx === gx && rc[i].gz === gz) { rList = rc[i].l; break; }
-    if (i === 4) { var n = rc[rcI]; rcI = (rcI + 1) & 3; n.gx = gx; n.gz = gz; rList = n.l = GRID[cellKey(gx, gz)] || null; }
+    if (i === 4) { var n = rc[rcI]; rcI = (rcI + 1) & 3; n.gx = gx; n.gz = gz; rList = n.l = GRID.get(cellKey(gx, gz)) || null; }
     if (!rList) return best;
     for (i = 0; i < rList.length; i++) {
       var o = rList[i];
@@ -461,12 +469,12 @@
      столбы и деревья выше 3 м не мешают. Без y — как раньше: каждое здание — стена на всю высоту. */
   function collide(x, z, r, opt) {
     var hit = false, nx = 0, nz = 0, y = opt && opt.y != null ? opt.y : null;
-    var list = near(x, z, r + 2);
-    for (var i = 0; i < list.length; i++) {
+    var list = scratch, ln = nearInto(x, z, r + 2, list);
+    for (var i = 0; i < ln; i++) {
       var o = list[i];
       if (o.prop) {
         if ((opt && opt.noProps) || y > 3) continue;
-        var dx = x - o.x, dz = z - o.z, d = Math.hypot(dx, dz), m = r + o.r;
+        var dx = x - o.x, dz = z - o.z, d = Math.sqrt(dx * dx + dz * dz), m = r + o.r;
         if (d < m && d > 1e-4) { x = o.x + dx / d * m; z = o.z + dz / d * m; hit = true; nx = dx / d; nz = dz / d; }
         continue;
       }
@@ -474,7 +482,7 @@
       if (ins < 0) continue;
       var hw = o.w / 2 - ins, hd = o.d / 2 - ins;
       var qx = FC.clamp(x, o.x - hw, o.x + hw), qz = FC.clamp(z, o.z - hd, o.z + hd);
-      var ex = x - qx, ez = z - qz, e = Math.hypot(ex, ez);
+      var ex = x - qx, ez = z - qz, e = Math.sqrt(ex * ex + ez * ez);   // sqrt, не hypot: тот не встраивается и мусорит
       if (e < r) {
         if (e < 1e-4) {                              // центр внутри — выталкиваем по кратчайшей оси
           var px = hw - Math.abs(x - o.x), pz = hd - Math.abs(z - o.z);
@@ -505,8 +513,8 @@
   }
   function buildingAt(x, z, pad) {
     pad = pad || 0;
-    var l = near(x, z, pad + 1);
-    for (var i = 0; i < l.length; i++) {
+    var l = scratch2, ln = nearInto(x, z, pad + 1, l);
+    for (var i = 0; i < ln; i++) {
       var o = l[i];
       if (!o.prop && Math.abs(x - o.x) <= o.w / 2 + pad && Math.abs(z - o.z) <= o.d / 2 + pad) return o;
     }

@@ -127,8 +127,15 @@
   var hpEl = document.querySelector(".hpbar");
   if (hpEl && hpEl.parentNode) hpEl.parentNode.insertBefore(armorBar, hpEl.nextSibling);
   var pillKey = "";
+  var armorD = null, armorW = -1;
+  var pillW = null, pillMg = -1, pillRs = -1, pillN = -1;
+  function ownedN() { var a = A(), k = 0; for (var i = 0; i < WEAPONS.length; i++) if (a.owned[WEAPONS[i].id]) k++; return k; }
   function drawPill() {
     var w = cur();
+    // каждый кадр: оружие, патроны и число стволов те же, плашку не сбрасывали (pillKey) — выходим без строк и owned()
+    var mg = magOf(w), rs = resOf(w), on = ownedN();
+    if (pillKey && w.id === pillW && mg === pillMg && rs === pillRs && on === pillN) return;
+    pillW = w.id; pillMg = mg; pillRs = rs; pillN = on;
     var txt = w.mag ? magOf(w) + "<small>/" + resOf(w) + "</small>" : w.maxAmmo ? String(resOf(w)) : "";
     var key = w.id + "|" + txt + "|" + owned().length;
     if (key === pillKey) return;
@@ -241,11 +248,17 @@
       for (var i = picks.length - 1; i >= 0; i--) if (FC.dist2(picks[i].x, picks[i].z, P.x, P.z) > 230 * 230) picks.splice(i, 1);
       if (picks.length < (G.Q.level === "low" ? 16 : 26)) spawnPick(P.x, P.z);
     }
-    var a = A(), list = picks.concat(STASH.filter(function (s) { return !a.stashes[s.id]; }).map(function (s) { s.k = "stash"; return s; }));
+    // находки и не найденные тайники — в готовый массив (было concat + filter + map: три массива и две функции на кадр);
+    // это копия на кадр, как раньше: подбор (splice из picks) не сбивает обход
+    var a = A(), list = pickList, nl = 0;
+    for (var pi = 0; pi < picks.length; pi++) list[nl++] = picks[pi];
+    for (var si = 0; si < STASH.length; si++) { var st = STASH[si]; if (!a.stashes[st.id]) { st.k = "stash"; list[nl++] = st; } }
+    for (var pj = nl; pj < pickListN; pj++) list[pj] = null;     // не держать подобранные
+    pickListN = nl;
     var t = performance.now() / 1000, n = 0;
-    for (var j = 0; j < list.length; j++) {
+    for (var j = 0; j < nl; j++) {
       var p = list[j];
-      var dx = P.x - p.x, dz = P.z - p.z, d = Math.hypot(dx, dz), dy = Math.abs((P.y || 0) + 0.8 - p.y);
+      var dx = P.x - p.x, dz = P.z - p.z, d = Math.sqrt(dx * dx + dz * dz), dy = Math.abs((P.y || 0) + 0.8 - p.y);
       if (!inside && P.mode === "foot" && !P.dead && dy < 2.6) {
         if (d < 3 && d > 0.2 && p.k !== "stash") { p.x += dx / d * Math.min(d, 6 * dt); p.z += dz / d * Math.min(d, 6 * dt); }
         if (d < 1.5 && collect(p)) {
@@ -264,10 +277,15 @@
       n++;
     }
     iMesh.count = n; gMesh.count = n;
-    iMesh.instanceMatrix.needsUpdate = true; gMesh.instanceMatrix.needsUpdate = true;
-    if (iMesh.instanceColor) iMesh.instanceColor.needsUpdate = true;
-    if (gMesh.instanceColor) gMesh.instanceColor.needsUpdate = true;
+    // в видеокарту — только n нарисованных (было: все IMAX каждый кадр, и при n = 0 тоже)
+    if (n) {
+      upd(iMesh.instanceMatrix, n); upd(gMesh.instanceMatrix, n);
+      if (iMesh.instanceColor) upd(iMesh.instanceColor, n);
+      if (gMesh.instanceColor) upd(gMesh.instanceColor, n);
+    }
   }
+  function upd(a, n) { a.needsUpdate = true; if (a.clearUpdateRanges) { a.clearUpdateRanges(); a.addUpdateRange(0, n * a.itemSize); } }
+  var pickList = [], pickListN = 0;
   // тайники на карте — после покупки «Карты тайников»
   FC.hud.addMapLayer(function (c, k) {
     var a = A(); if (!a.stashMap) return;
@@ -501,9 +519,10 @@
         bolts[b].t -= dt;
         if (bolts[b].t <= 0) { G.scene.remove(bolts[b].m); bolts.splice(b, 1); }
       }
-      var arm = A().armor;
-      armorBar.style.display = arm > 0 ? "" : "none";
-      armorBar.firstChild.style.width = Math.max(0, Math.min(100, arm)) + "%";
+      // броня: стиль — только при изменении (писался каждый кадр: пересчёт стилей и раскладки перед миникартой)
+      var arm = A().armor, armD = arm > 0 ? "" : "none", armW = Math.max(0, Math.min(100, arm));
+      if (armD !== armorD) { armorD = armD; armorBar.style.display = armD; }
+      if (armW !== armorW) { armorW = armW; armorBar.firstChild.style.width = armW + "%"; }
       drawPill();
     }
   });

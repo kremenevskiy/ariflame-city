@@ -17,6 +17,9 @@
   var W = global.FC_SPECIES;
 
   var MAX = 520;
+  // длина вектора: Math.sqrt вместо Math.hypot в ходе людей — hypot в V8 не встраивается, в ~9 раз дороже и на каждый
+  // вызов создаёт числа в куче (а зовётся по 2–3 раза на каждого из ~300 людей за кадр); разница — в последнем знаке
+  function hyp(x, z) { return Math.sqrt(x * x + z * z); }
   var CELLS = {};                           // код вида → клетка атласа
   if (W) W.CRE.forEach(function (code, i) { if (code) CELLS[code] = i - 1; });
   var CODES = W ? W.CRE.slice(1) : [];
@@ -123,10 +126,26 @@
   /* ---- персонажи ------------------------------------------------------------------------------------------ */
   var all = [];
   var seq = 0;
+  /* Человек — объект конструктора Person: те же поля и значения, что у прежнего литерала, плюс поля, которые ход
+     прохожих дописывал позже и в разном порядке (квартал, пауза, кружок, якорь, уворот…) — у прохожих было 15+ «форм»
+     объекта, и каждое чтение дробного поля в ходе и отрисовке создавало число в куче (~3 МБ/с, замер 26.11). «Нет» —
+     undefined, как у отсутствующего поля; таймеры, которые только сравнивают (> 0) и уменьшают, — NaN: в сравнениях и
+     арифметике он ведёт себя как undefined, но поле сразу числовое. Опции opt — поверх, как раньше. */
+  function Person(kind, cell, x, z) {
+    this.id = kind + (seq++); this.kind = kind; this.cell = cell; this.x = x; this.y = 0.15; this.z = z; this.vx = 0; this.vz = 0; this.vy = 0;
+    this.face = 1; this.speed = 0; this.phase = Math.random() * 6; this.knocked = 0; this.spin = 0; this.tilt = 0; this.hp = 100; this.flee = 0;
+    this.alpha = 0; this.scale = 1.75; this.bright = 1; this.inside = null; this.walk = 1.3; this.goal = null; this.path = null; this.bubble = null;
+    this.visible = true;
+    this.block = undefined; this.per = undefined; this.s = NaN; this.dir = undefined; this.lane = undefined; this.phone = undefined;
+    this.group = undefined; this.look = undefined; this.talk = undefined; this.anchor = undefined; this.brain = undefined; this.wait = NaN;
+    this.goal2 = undefined; this.ls = undefined; this.loff = undefined; this.ldir = undefined; this.pause = NaN; this.dodge = NaN;
+    this.dvx = undefined; this.dvz = undefined; this.filming = NaN; this.cower = NaN; this.fx = undefined; this.fz = undefined;
+    this.colT = NaN; this.colOk = undefined;
+    this.shown = undefined; this._d = undefined; this._hs = undefined; this._yaw = undefined; this._m3d = undefined;   // отрисовка, fhumans, fmodels
+  }
   function make(kind, cell, x, z, opt) {
-    var ch = Object.assign({ id: kind + (seq++), kind: kind, cell: cell, x: x, y: 0.15, z: z, vx: 0, vz: 0, vy: 0, face: 1,
-      speed: 0, phase: Math.random() * 6, knocked: 0, spin: 0, tilt: 0, hp: 100, flee: 0, alpha: 0, scale: 1.75, bright: 1,
-      inside: null, walk: 1.3, goal: null, path: null, bubble: null, visible: true }, opt || {});
+    var ch = new Person(kind, cell, x, z);
+    if (opt) Object.assign(ch, opt);
     all.push(ch);
     return ch;
   }
@@ -152,9 +171,12 @@
       if (!ch.bubble) continue;
       if (now > ch.bubbleUntil || !ch.shown) { hideBubble(ch); continue; }
       tmpV.set(ch.x, ch.y + ch.scale * 1.15, ch.z).project(cam);
-      if (tmpV.z > 1) { ch.bubble.style.display = "none"; continue; }
-      ch.bubble.style.display = "";
-      ch.bubble.style.transform = "translate(" + ((tmpV.x + 1) / 2 * w) + "px," + ((1 - tmpV.y) / 2 * h) + "px) translate(-50%,-100%)";
+      // стиль пишем только при изменении (запись — пересчёт стилей; стоящий пузырь при стоящей камере не трогаем)
+      var b = ch.bubble;
+      if (tmpV.z > 1) { if (b._disp !== "none") { b.style.display = b._disp = "none"; } continue; }
+      if (b._disp !== "") { b.style.display = b._disp = ""; }
+      var tf = "translate(" + ((tmpV.x + 1) / 2 * w) + "px," + ((1 - tmpV.y) / 2 * h) + "px) translate(-50%,-100%)";
+      if (b._tf !== tf) { b.style.transform = b._tf = tf; }
     }
   }
 
@@ -167,20 +189,30 @@
     var x0 = b.x0 + 1.6, x1 = b.x1 - 1.6, z0 = b.z0 + 1.6, z1 = b.z1 - 1.6;
     return { x0: x0, x1: x1, z0: z0, z1: z1, L: 2 * (x1 - x0) + 2 * (z1 - z0) };
   }
-  function perimPoint(p, s) {
+  // out — готовый массив [x, z]: прохожий зовёт это дважды за кадр (и nearestS — через каждые 2 м квартала), без него —
+  // новый массив, как раньше
+  function perimPoint(p, s, out) {
     if (p.pts) {
       var a = p.s0 || 0, L = (p.s1 || p.L) - a;
-      if (L <= 0.5) return M.polyAt(p, a);
+      if (L <= 0.5) return M.polyAt(p, a, out);
       var u = ((s % (2 * L)) + 2 * L) % (2 * L);
-      return M.polyAt(p, a + (u > L ? 2 * L - u : u));
+      return M.polyAt(p, a + (u > L ? 2 * L - u : u), out);
     }
-    var w = p.x1 - p.x0, d = p.z1 - p.z0;
+    var w = p.x1 - p.x0, d = p.z1 - p.z0, x, z;
     s = ((s % p.L) + p.L) % p.L;
-    if (s < w) return [p.x0 + s, p.z0];
-    s -= w; if (s < d) return [p.x1, p.z0 + s];
-    s -= d; if (s < w) return [p.x1 - s, p.z1];
-    s -= w; return [p.x0, p.z1 - s];
+    if (s < w) { x = p.x0 + s; z = p.z0; }
+    else if ((s -= w) < d) { x = p.x1; z = p.z0 + s; }
+    else if ((s -= d) < w) { x = p.x1 - s; z = p.z1; }
+    else { s -= w; x = p.x0; z = p.z1 - s; }
+    if (!out) return [x, z];
+    out[0] = x; out[1] = z; return out;
   }
+  var pp0 = [0, 0], pp1 = [0, 0];                  // черновики perimPoint для хода прохожих
+  // опции M.collide — общие объекты вместо нового литерала на каждый шаг каждого человека (collide читает их только во
+  // время вызова); prev — откуда шёл (вода возвращает туда)
+  var OPT_N = { noProps: true }, OPT_P = { prev: null }, OPT_PN = { prev: null, noProps: true };
+  function optP(ch) { OPT_P.prev = ch; return OPT_P; }
+  function optPN(ch) { OPT_PN.prev = ch; return OPT_PN; }
   function spawnPed(nearX, nearZ, fill) {
     // на скорости новых ставим впереди по ходу (иначе впереди пустая улица — всех появившихся оставили позади)
     var P = FC.player, pv = P ? Math.hypot(P.vx, P.vz) : 0, cx = nearX, cz = nearZ, rad = 150;
@@ -224,7 +256,7 @@
         off = FC.clamp(ch.loff + R.range(-1.6, 1.6), -A.w / 2 + 1.4, A.w / 2 - 1.4);
       } else { s = R.range(0, A.L); off = R.range(-A.w / 2 + 1.4, A.w / 2 - 1.4); }
       var q = lineAt(A, s, off);
-      if (M.water(q.x, q.z) || M.buildingAt(q.x, q.z, 0.8) || M.collide(q.x, q.z, 0.45, { noProps: true }).hit) continue;
+      if (M.water(q.x, q.z) || M.buildingAt(q.x, q.z, 0.8) || M.collide(q.x, q.z, 0.45, OPT_N).hit) continue;
       if (ch) { ch.ls = s; ch.loff = off; }
       q.s = s; q.off = off; return q;
     }
@@ -236,7 +268,7 @@
       var a = R.range(0, 6.283), d = Math.sqrt(R()) * (near ? Math.min(14, A.r) : A.r);
       var x = (near ? near.x : A.x) + Math.cos(a) * d, z = (near ? near.z : A.z) + Math.sin(a) * d;
       if (FC.dist2(x, z, A.x, A.z) > A.r * A.r || M.water(x, z) || M.onRoad(x, z) || M.buildingAt(x, z, 1.5)) continue;
-      if (M.collide(x, z, 0.45, { noProps: true }).hit) continue;
+      if (M.collide(x, z, 0.45, OPT_N).hit) continue;
       return { x: x, z: z };
     }
     return null;
@@ -250,10 +282,22 @@
       if (R.chance(0.35)) { ch.wait = R.range(2, 9); return true; }   // постоять: посмотреть, позвонить
       if (!ch.goal2) { ch.wait = 3; return true; }
     }
-    var dx = ch.goal2.x - ch.x, dz = ch.goal2.z - ch.z, dl = Math.hypot(dx, dz) || 1, v = ch.walk;
-    var c = M.collide(ch.x + dx / dl * v * dt, ch.z + dz / dl * v * dt, 0.35, { prev: ch });
+    var dx = ch.goal2.x - ch.x, dz = ch.goal2.z - ch.z, dl = hyp(dx, dz) || 1, v = ch.walk;
+    var nx = ch.x + dx / dl * v * dt, nz = ch.z + dz / dl * v * dt, cp = G.camera.position;
+    /* Дальше 40 м от камеры стены, вода и высота плитки — раз в 0,15 с (было — каждый кадр у каждого гуляющего, а их у
+       бульвара до 40): между проверками идёт по прямой к точке, уже проверенной strollPoint; заступ за 0,15 с — до 20 см,
+       на таком расстоянии не виден. Ближе — каждый кадр, как было. Вода возвращает на последнюю проверенную точку. */
+    var far = FC.dist2(ch.x, ch.z, cp.x, cp.z) > 40 * 40;
+    if (far && ch.colT > 0) {
+      ch.colT -= dt;
+      ch.vx = (nx - ch.x) / dt; ch.vz = (nz - ch.z) / dt; ch.x = nx; ch.z = nz; ch.speed = v;
+      return true;
+    }
+    ch.colT = 0.15;
+    var c = M.collide(nx, nz, 0.35, optP(far && ch.colOk ? ch.colOk : ch));
     if (c.hit) ch.goal2 = null;
     ch.vx = (c.x - ch.x) / dt; ch.vz = (c.z - ch.z) / dt; ch.x = c.x; ch.z = c.z; ch.speed = v;
+    if (ch.colOk) { ch.colOk.x = c.x; ch.colOk.z = c.z; } else ch.colOk = { x: c.x, z: c.z };
     if (A.line && FC.places.surfaceAt) { var sf = FC.places.surfaceAt(ch.x, ch.z); ch.y = sf != null ? sf : 0.15; }
     return true;
   }
@@ -278,7 +322,7 @@
     return ch;
   }
   function stroll(x, z, r, n) {
-    var A = { x: x, z: z, r: r || 45, n: n || 14 };
+    var A = { x: x, z: z, r: r || 45, n: n || 14, have: 0 };
     anchors.push(A);
     return A;
   }
@@ -290,25 +334,29 @@
       line.push({ x: ax, z: az, dx: dx / len, dz: dz / len, len: len, s0: L, s1: L + len }); L += len;
     }
     var mid = pts[Math.floor(pts.length / 2)];
-    var A = { line: line, L: L, w: Math.max(4, w || 8), n: n || Math.min(40, Math.round(L / 7)), x: mid[0], z: mid[1], r: L / 2 + (w || 8) };
+    var A = { line: line, L: L, w: Math.max(4, w || 8), n: n || Math.min(40, Math.round(L / 7)), x: mid[0], z: mid[1], r: L / 2 + (w || 8), have: 0 };
     anchors.push(A);
     return A;
   }
   function anchorD2(A, px, pz) {
     if (!A.line) return FC.dist2(px, pz, A.x, A.z);
     var best = 1e18;
-    A.line.forEach(function (g) {
-      var u = FC.clamp((px - g.x) * g.dx + (pz - g.z) * g.dz, 0, g.len), qx = g.x + g.dx * u, qz = g.z + g.dz * u;
+    for (var i = 0; i < A.line.length; i++) {
+      var g = A.line[i], u = FC.clamp((px - g.x) * g.dx + (pz - g.z) * g.dz, 0, g.len), qx = g.x + g.dx * u, qz = g.z + g.dz * u;
       best = Math.min(best, FC.dist2(px, pz, qx, qz));
-    });
+    }
     return best;
   }
   function strollTick(px, pz, fillP) {
-    for (var i = 0; i < anchors.length; i++) {
+    // сколько у каждого якоря людей — одним проходом по прохожим (было: проход по всем на каждый якорь). Добавленные ниже
+    // люди якоря A на счёт других якорей не влияют — числа те же, что при подсчёте у каждого якоря отдельно
+    var i, k;
+    for (i = 0; i < anchors.length; i++) anchors[i].have = 0;
+    for (k = 0; k < peds.length; k++) if (peds[k].anchor) peds[k].anchor.have++;
+    for (i = 0; i < anchors.length; i++) {
       var A = anchors[i], d2 = anchorD2(A, px, pz);
       if (d2 > 220 * 220) continue;
-      var have = 0;
-      for (var k = 0; k < peds.length; k++) if (peds[k].anchor === A) have++;
+      var have = A.have;
       for (var j = 0; j < Math.min(fillP ? A.n : 1, A.n - have); j++) strollAdd(A, fillP);
     }
   }
@@ -331,7 +379,7 @@
     for (var i = 0; i < n; i++) {
       var ch = i ? make("ped", randomCell(R), first.x, first.z, { walk: R.range(1.1, 1.6) }) : first;
       if (i) { ch.block = first.block; ch.per = first.per; ch.dir = R.chance(0.5) ? 1 : -1; ch.lane = R.range(-0.7, 0.7); peds.push(ch); }
-      var a = a0 + i * 6.28 / n, c = M.collide(g.x + Math.cos(a) * 0.75, g.z + Math.sin(a) * 0.75, 0.3, { noProps: true });
+      var a = a0 + i * 6.28 / n, c = M.collide(g.x + Math.cos(a) * 0.75, g.z + Math.sin(a) * 0.75, 0.3, OPT_N);
       ch.x = c.x; ch.z = c.z; ch.group = g; ch.look = g;
       g.members.push(ch);
     }
@@ -371,7 +419,7 @@
       ch.flee -= dt;
       var sp = 4.8;
       var nx = ch.x + ch.fx * sp * dt, nz = ch.z + ch.fz * sp * dt;
-      var c = M.collide(nx, nz, 0.35, { prev: ch });
+      var c = M.collide(nx, nz, 0.35, optP(ch));
       if (c.hit) { var tf = ch.fx; ch.fx = -ch.fz; ch.fz = tf; }
       ch.vx = (c.x - ch.x) / dt; ch.vz = (c.z - ch.z) / dt; ch.x = c.x; ch.z = c.z; ch.speed = sp;
       if (ch.flee <= 0) { var b = M.blockAt(ch.x, ch.z); if (b && b.kind !== "water") { ch.block = b; ch.per = perimeter(b); ch.s = nearestS(ch.per, ch.x, ch.z); } }
@@ -380,7 +428,7 @@
     // игрок несётся прямо на прохожего — отскок в сторону с репликой (не стена, а живой человек)
     var P = FC.player;
     if (P && P.mode === "foot" && !ch.dodge) {
-      var dx0 = ch.x - P.x, dz0 = ch.z - P.z, d0 = Math.hypot(dx0, dz0), pv = Math.hypot(P.vx, P.vz);
+      var dx0 = ch.x - P.x, dz0 = ch.z - P.z, d0 = hyp(dx0, dz0), pv = hyp(P.vx, P.vz);
       if (d0 < 2.6 && pv > 5 && (P.vx * dx0 + P.vz * dz0) / (d0 * pv + 1e-6) > 0.6) {
         var side = (P.vx * dz0 - P.vz * dx0) > 0 ? 1 : -1;
         ch.dodge = 0.45; ch.dvx = -P.vz / pv * side * 5; ch.dvz = P.vx / pv * side * 5;
@@ -389,15 +437,15 @@
     }
     if (ch.dodge) {
       ch.dodge -= dt;
-      var cd = M.collide(ch.x + ch.dvx * dt, ch.z + ch.dvz * dt, 0.35, { prev: ch, noProps: true });
+      var cd = M.collide(ch.x + ch.dvx * dt, ch.z + ch.dvz * dt, 0.35, optPN(ch));
       ch.vx = ch.dvx; ch.vz = ch.dvz; ch.x = cd.x; ch.z = cd.z; ch.speed = 5;
       if (ch.dodge <= 0) { ch.dodge = 0; ch.s = nearestS(ch.per, ch.x, ch.z); }
       return;
     }
     if (ch.pause > 0) { ch.pause -= dt; ch.vx = ch.vz = 0; ch.speed = 0; return; }
     ch.s += ch.dir * ch.walk * dt;
-    var p = perimPoint(ch.per, ch.s), q = perimPoint(ch.per, ch.s + ch.dir * 0.5);
-    var dx = q[0] - p[0], dz = q[1] - p[1], dl = Math.hypot(dx, dz) || 1;
+    var p = perimPoint(ch.per, ch.s, pp0), q = perimPoint(ch.per, ch.s + ch.dir * 0.5, pp1);
+    var dx = q[0] - p[0], dz = q[1] - p[1], dl = hyp(dx, dz) || 1;
     var tx = p[0] - dz / dl * ch.lane, tz = p[1] + dx / dl * ch.lane;
     ch.vx = (tx - ch.x) / Math.max(dt, 1e-3); ch.vz = (tz - ch.z) / Math.max(dt, 1e-3);
     // сглаживаем, чтобы на углах не дёргало
@@ -408,7 +456,7 @@
   }
   function nearestS(p, x, z) {
     var best = 0, bd = 1e18;
-    for (var s = 0; s < p.L; s += 2) { var q = perimPoint(p, s), d = FC.dist2(q[0], q[1], x, z); if (d < bd) { bd = d; best = s; } }
+    for (var s = 0; s < p.L; s += 2) { var q = perimPoint(p, s, pp0), d = FC.dist2(q[0], q[1], x, z); if (d < bd) { bd = d; best = s; } }
     return best;
   }
   /* Паника вокруг точки: прохожие разбегаются (и кричат), часть снимает на телефон. */
@@ -476,7 +524,7 @@
       if (ny <= floor) { ny = floor; ch.vy = 0; var f = Math.exp(-8 * dt); ch.vx *= f; ch.vz *= f; ch.spin *= f; }
       // внутри здания — стены этажа (FC.inside.collide), иначе удар выносил NPC сквозь стену городской физикой
       var inRoom = ch.room != null && FC.inside && FC.inside.active && FC.inside.building && FC.inside.building.id === ch.room;
-      var c = inRoom ? FC.inside.collide(ch.x + ch.vx * dt, ch.z + ch.vz * dt, 0.35) : M.collide(ch.x + ch.vx * dt, ch.z + ch.vz * dt, 0.35, { prev: ch });
+      var c = inRoom ? FC.inside.collide(ch.x + ch.vx * dt, ch.z + ch.vz * dt, 0.35) : M.collide(ch.x + ch.vx * dt, ch.z + ch.vz * dt, 0.35, optP(ch));
       if (c.hit) { ch.vx *= -0.3; ch.vz *= -0.3; }
       ch.x = c.x; ch.z = c.z; ch.y = inRoom ? Math.max(ny, FC.inside.floorY()) : ny;
       if (!ch._hs) {
@@ -588,13 +636,13 @@
     if (ch.entering > 0) {                           // входит: шаг к двери и тает
       var hd = ch.home && ch.home.doors[0];
       ch.entering -= dt;
-      if (hd) { var ex = hd.x + hd.nx * 0.2 - ch.x, ez = hd.z + hd.nz * 0.2 - ch.z, ed = Math.hypot(ex, ez) || 1; ch.vx = ex / ed * 1.2; ch.vz = ez / ed * 1.2; ch.x += ch.vx * dt; ch.z += ch.vz * dt; ch.speed = 1.2; }
+      if (hd) { var ex = hd.x + hd.nx * 0.2 - ch.x, ez = hd.z + hd.nz * 0.2 - ch.z, ed = hyp(ex, ez) || 1; ch.vx = ex / ed * 1.2; ch.vz = ez / ed * 1.2; ch.x += ch.vx * dt; ch.z += ch.vz * dt; ch.speed = 1.2; }
       ch.alpha = Math.max(0, ch.entering / 0.7);
       if (ch.entering <= 0) { ch.entering = 0; ch.alpha = 1; ch.inside = ch.home ? ch.home.id : null; if (hd) doorFx(hd); }
       return;
     }
     if (ch.path && ch.path.length) {
-      var t = ch.path[0], dx = t.x - ch.x, dz = t.z - ch.z, d = Math.hypot(dx, dz);
+      var t = ch.path[0], dx = t.x - ch.x, dz = t.z - ch.z, d = hyp(dx, dz);
       var sp = ch.walk * (ch.mode === "inside" ? 1.5 : 1.15);
       if (d < 0.8) {
         ch.path.shift();
@@ -608,7 +656,7 @@
         return;
       }
       ch.vx = dx / d * sp; ch.vz = dz / d * sp; ch.speed = sp;
-      var c = M.collide(ch.x + ch.vx * dt, ch.z + ch.vz * dt, 0.35, { prev: ch, noProps: true });
+      var c = M.collide(ch.x + ch.vx * dt, ch.z + ch.vz * dt, 0.35, optPN(ch));
       ch.x = c.x; ch.z = c.z;
       return;
     }
@@ -621,7 +669,7 @@
       ch.wanderT = 3 + Math.random() * 6;
     }
     ch.wanderT -= dt;
-    var wx = ch.wander.x - ch.x, wz = ch.wander.z - ch.z, wd = Math.hypot(wx, wz);
+    var wx = ch.wander.x - ch.x, wz = ch.wander.z - ch.z, wd = hyp(wx, wz);
     if (wd > 0.6) { ch.vx = wx / wd * 0.9; ch.vz = wz / wd * 0.9; ch.x += ch.vx * dt; ch.z += ch.vz * dt; ch.speed = 0.9; }
     else { ch.vx = ch.vz = 0; ch.speed = 0; }
   }
@@ -678,6 +726,7 @@
     }
   });
 
+  function upd(a, n) { a.needsUpdate = true; if (a.clearUpdateRanges) { a.clearUpdateRanges(); a.addUpdateRange(0, n * a.itemSize); } }
   function draw(dt) {
     var cam = G.camera, P = FC.player;
     var fog = G.scene.fog;
@@ -723,7 +772,9 @@
       j++;
     }
     mesh.count = j; blobs.count = j;
-    aPos.needsUpdate = true; aAnim.needsUpdate = true; aCell.needsUpdate = true; blobs.instanceMatrix.needsUpdate = true;
+    // в видеокарту — только нарисованные j фигурок (раньше — все MAX=520 буферов, ~54 КБ за кадр, даже когда людей рисует
+    // fhumans и спрайтов 0)
+    if (j) { upd(aPos, j); upd(aAnim, j); upd(aCell, j); upd(blobs.instanceMatrix, j); }
     if (P && P.ch) P.ch.shown = true;
   }
 

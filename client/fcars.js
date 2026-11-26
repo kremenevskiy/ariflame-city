@@ -19,6 +19,8 @@
   var FC = global.FC, T = global.THREE, M = FC.map, G = FC.gfx;
 
   var D2R = Math.PI / 180;
+  // длина (x, z) в кадровых циклах: Math.hypot в V8 не встраивается, в ~9 раз дороже и мусорит; разница — в последнем знаке
+  function hyp(x, z) { return Math.sqrt(x * x + z * z); }
   // Характер типа: масса, разгон, скорость, сцепление и занос (по исследованию поведения машин), крен кузова (roll), звук мотора
   // snd = [высота, громкость], тряска камеры (shake). flat — электрический разгон без провала; drifty — уходит в занос легче;
   // moto — двухколёсный (наклон в повороте, вилли, падение); emergency — спецмашина с сиреной.
@@ -232,18 +234,22 @@
     var pts = new T.Points(geo, mat); pts.frustumCulled = false; root.add(pts);
     var P = [];
     for (var i = 0; i < n; i++) P.push({ life: 0 });
-    return { pts: pts, geo: geo, mat: mat, P: P, n: n, i: 0 };
+    return { pts: pts, geo: geo, mat: mat, P: P, n: n, i: 0, idle: false };
   }
   var SMOKE = particles(G.Q.level === "low" ? 160 : 360, false), FIRE = particles(G.Q.level === "low" ? 120 : 260, true);
   function emit(sys, x, y, z, vx, vy, vz, life, s0, s1, a0, r, g, b) {
     var p = sys.P[sys.i]; sys.i = (sys.i + 1) % sys.n;
+    if (sys.idle) { sys.idle = false; sys.pts.visible = true; }
     p.x = x; p.y = y; p.z = z; p.vx = vx; p.vy = vy; p.vz = vz; p.life = p.max = life; p.s0 = s0; p.s1 = s1; p.a0 = a0; p.r = r; p.g = g; p.b = b;
   }
+  // ни одной живой частицы (обычно дыма и огня нет) — шаг, выгрузка ~20 КБ и 620 точек не нужны: прячем до emit()
   function stepParticles(sys, dt) {
-    var pos = sys.geo.attributes.position.array, sz = sys.geo.attributes.aSize.array, al = sys.geo.attributes.aAlpha.array, cl = sys.geo.attributes.aCol.array;
+    if (sys.idle) return;
+    var pos = sys.geo.attributes.position.array, sz = sys.geo.attributes.aSize.array, al = sys.geo.attributes.aAlpha.array, cl = sys.geo.attributes.aCol.array, live = 0;
     for (var i = 0; i < sys.n; i++) {
       var p = sys.P[i];
       if (p.life <= 0) { al[i] = 0; continue; }
+      live++;
       p.life -= dt;
       p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vx *= 0.98; p.vz *= 0.98;
       var k = 1 - p.life / p.max;
@@ -251,6 +257,7 @@
       sz[i] = p.s0 + (p.s1 - p.s0) * k; al[i] = p.a0 * (1 - k) * Math.min(1, k * 6 + 0.2);
       cl[i * 3] = p.r; cl[i * 3 + 1] = p.g; cl[i * 3 + 2] = p.b;
     }
+    if (!live) { sys.idle = true; sys.pts.visible = false; return; }
     sys.geo.attributes.position.needsUpdate = true; sys.geo.attributes.aSize.needsUpdate = true;
     sys.geo.attributes.aAlpha.needsUpdate = true; sys.geo.attributes.aCol.needsUpdate = true;
     sys.mat.uniforms.uScale.value = G.renderer.domElement.height / (2 * Math.tan(G.camera.fov * D2R / 2));
@@ -260,23 +267,40 @@
   var flashT = 0;
 
   /* ---- машины --------------------------------------------------------------------------------------------- */
-  var list = [], seq = 0;
+  var list = [], seq = 0, listVer = 0;                     // listVer — меняется при каждом добавлении/удалении машины
   function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+  /* Машина — объект конструктора (не литерал: тот клонирует первый образец, и уточнённые движком типы полей до новых машин
+     не доходят), все поля сразу; дописывавшиеся позже (braking…slip, keep, dead) — с тем же смыслом (0/false ≡ «не было»).
+     Одна «форма» у всех машин — горячие циклы не теряют оптимизацию на каждой новой (26.11: ~20 МБ/с мусора из чисел). */
+  function Car(S, type, x, z, heading, opt, color) {
+    this.id = "car" + (seq++); this.type = S.key; this.spec = S; this.x = x; this.z = z; this.heading = heading || 0; this.vx = 0; this.vz = 0;
+    this.w = 0; this.v = 0; this.steer = 0; this.steerVis = 0; this.spin = 0; this.hp = 100; this.color = color; this.owned = !!opt.owned;
+    this.parked = !!opt.parked; this.police = type === "police" || !!opt.police; this.siren = !!opt.siren;
+    this.driver = opt.driver || (opt.ai ? "ai" : "none"); this.ai = opt.ai || null; this.wrecked = false; this.spiked = false; this.roll = 0;
+    this.pitch = 0; this.drift = false; this.smokeT = 0; this.burnT = 0; this.slot = opt.slot != null ? opt.slot : null; this.born = performance.now();
+    this.honkT = 0; this.stuckT = 0; this.revT = 0; this.lastX = x; this.lastZ = z; this.node = -1; this.gear = 0; this.tune = opt.tune || null;
+    this.braking = false; this.prevVF = 0; this.rollV = 0; this.pitchV = 0; this.gy = 0; this.gyOk = false; this.wheelie = 0; this.wheelieWant = false;
+    this.lastHit = 0; this.wheelspin = 0; this.lastT = 0; this.vF = 0; this.slip = 0; this.keep = false; this.dead = false; this.li = 0; this.nearAt = 0;
+    this.sS = null; this.sL = 0; this.sW = 0; this.sD = 0; this.sWb = 0; this.sMs = 0; this.sVt = 0; this.sBk = 0;
+  }
+  /* Размеры кузова, база, предел руля, максималка (vtop || 99), множитель автобуса — копией в машине: spec у типов разной
+     формы, чтение дробного поля из них в горячих циклах создаёт число в куче. spec сменился (тюнинг) — перечитываем. */
+  function dims(c) {
+    var S = c.spec;
+    if (c.sS !== S) { c.sS = S; c.sL = S.L; c.sW = S.W; c.sD = Math.hypot(S.L, S.W); c.sWb = S.wb; c.sMs = S.maxSteer; c.sVt = S.vtop || 99; c.sBk = S.bus ? 0.8 : 1; }
+    return c;
+  }
   function spawn(type, x, z, heading, opt) {
     opt = opt || {};
     var S = TYPES[type] || TYPES.sedan;
     var color = colorHex(opt.color != null ? opt.color : pick(S.colors || PALETTE));
-    var car = { id: "car" + (seq++), type: S.key, spec: S, x: x, z: z, heading: heading || 0, vx: 0, vz: 0, w: 0, v: 0,
-      steer: 0, steerVis: 0, spin: 0, hp: 100, color: color, owned: !!opt.owned, parked: !!opt.parked, police: type === "police" || !!opt.police,
-      siren: !!opt.siren, driver: opt.driver || (opt.ai ? "ai" : "none"), ai: opt.ai || null, wrecked: false, spiked: false,
-      roll: 0, pitch: 0, drift: false, smokeT: 0, burnT: 0, slot: opt.slot != null ? opt.slot : null, born: performance.now(),
-      honkT: 0, stuckT: 0, revT: 0, lastX: x, lastZ: z, node: -1, gear: 0, tune: opt.tune || null };
+    var car = new Car(S, type, x, z, heading, opt, color);
     if (car.tune && car.tune.color != null) car.color = colorHex(car.tune.color);
-    list.push(car);
+    list.push(car); listVer++;
     return car;
   }
   function remove(car) {
-    var i = list.indexOf(car); if (i >= 0) list.splice(i, 1);
+    var i = list.indexOf(car); if (i >= 0) { list.splice(i, 1); listVer++; }
     if (car.slot != null && SLOTS[car.slot]) SLOTS[car.slot].car = null;
     car.dead = true;
   }
@@ -326,7 +350,7 @@
   function physStep(car, h, inp) {
     var S = car.spec, th = car.heading;
     var fx = Math.sin(th), fz = Math.cos(th), rx = -fz, rz = fx;     // вперёд и вправо
-    var vF = car.vx * fx + car.vz * fz, vR = car.vx * rx + car.vz * rz, spd = Math.hypot(car.vx, car.vz);
+    var vF = car.vx * fx + car.vz * fz, vR = car.vx * rx + car.vz * rz, spd = hyp(car.vx, car.vz);
     var vmax = S.vmax * (car.spiked ? 0.6 : 1) * (car.hp < 30 ? 0.75 : 1) * (inp.boost || 1);
     var t = inp.throttle || 0, b = inp.brake || 0;
     if (car.wrecked) { t = 0; b = 1; }
@@ -388,23 +412,30 @@
     car.vF = vF; car.slip = slip;
   }
 
-  // круги машины (два по длине): центры
-  function circles(car) {
-    var S = car.spec, r = S.W / 2, o = S.L / 2 - r, fx = Math.sin(car.heading), fz = Math.cos(car.heading);
-    if (S.L > 7) return [[car.x + fx * o, car.z + fz * o, r], [car.x, car.z, r], [car.x - fx * o, car.z - fz * o, r]];
-    return [[car.x + fx * o, car.z + fz * o, r], [car.x - fx * o, car.z - fz * o, r]];
+  // круги машины (два по длине, у длинных — три): центры — в готовый out, ответ — сколько кругов (каждый кадр у каждой
+  // машины, без новых массивов). Черновики у жёсткого и мягкого столкновения свои; опции collide — общие объекты
+  function circles(car, out) {
+    dims(car);
+    var r = car.sW / 2, o = car.sL / 2 - r, fx = Math.sin(car.heading), fz = Math.cos(car.heading), k = car.sL > 7 ? 1 : 0;
+    out[0][0] = car.x + fx * o; out[0][1] = car.z + fz * o; out[0][2] = r;
+    if (k) { out[1][0] = car.x; out[1][1] = car.z; out[1][2] = r; }
+    out[1 + k][0] = car.x - fx * o; out[1 + k][1] = car.z - fz * o; out[1 + k][2] = r;
+    return 2 + k;
   }
+  var csHard = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], csSoft = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], prevHard = { x: 0, z: 0 }, prevSoft = { x: 0, z: 0 };
+  var optHard = { prev: prevHard, water: undefined }, optSoft = { noProps: true, prev: prevSoft };
   function hitWorld(car, prevX, prevZ) {
-    var cs = circles(car), dx0 = prevX - car.x, dz0 = prevZ - car.z, worst = 0;
-    for (var i = 0; i < cs.length; i++) {
+    var cs = csHard, nc = circles(car, cs), dx0 = prevX - car.x, dz0 = prevZ - car.z, worst = 0;
+    for (var i = 0; i < nc; i++) {
       var c = cs[i];
       // вода — не стена для машины игрока (23.11: «в воду можно»): въехал — вязнет и тонет (water() ниже); поток — как был
-      var res = M.collide(c[0], c[1], c[2], { prev: { x: c[0] + dx0, z: c[1] + dz0 }, water: car.driver === "player" || car.wet ? false : undefined });
+      prevHard.x = c[0] + dx0; prevHard.z = c[1] + dz0; optHard.water = car.driver === "player" || car.wet ? false : undefined;
+      var res = M.collide(c[0], c[1], c[2], optHard);
       if (!res.hit) continue;
       var mx = res.x - c[0], mz = res.z - c[1];
       car.x += mx; car.z += mz;
-      var nx = res.nx, nz = res.nz, nl = Math.hypot(nx, nz);
-      if (nl < 0.5) { var ml = Math.hypot(mx, mz); if (ml < 1e-5) { car.vx *= 0.5; car.vz *= 0.5; continue; } nx = mx / ml; nz = mz / ml; }
+      var nx = res.nx, nz = res.nz, nl = hyp(nx, nz);
+      if (nl < 0.5) { var ml = hyp(mx, mz); if (ml < 1e-5) { car.vx *= 0.5; car.vz *= 0.5; continue; } nx = mx / ml; nz = mz / ml; }
       var vn = car.vx * nx + car.vz * nz;
       if (vn < 0) {
         var e = Math.abs(vn) < 1 ? 0 : 0.2;
@@ -553,16 +584,18 @@
 
   /* ---- пешеходы под колёсами и игрок пешком ------------------------------------------------------------------- */
   function hitPeople(car) {
-    var spd = Math.hypot(car.vx, car.vz);
+    var spd = hyp(car.vx, car.vz);
     if (spd < 1.2) return;
     var S = car.spec, fx = Math.sin(car.heading), fz = Math.cos(car.heading), all = FC.people.all;
+    dims(car);
+    var SL = car.sL, SW = car.sW;                      // размеры — один раз, а не на каждого из ~300 людей
     for (var i = 0; i < all.length; i++) {
       var ch = all[i];
       if (ch.kind === "player" || ch.kind === "remote" || ch.knocked > 0 || ch.room != null || ch.inside != null) continue;
       var dx = ch.x - car.x, dz = ch.z - car.z;
-      if (Math.abs(dx) > S.L || Math.abs(dz) > S.L) continue;
+      if (Math.abs(dx) > SL || Math.abs(dz) > SL) continue;
       var lz = dx * fx + dz * fz, lx = dx * (-fz) + dz * fx;
-      if (Math.abs(lz) > S.L / 2 + 0.35 || Math.abs(lx) > S.W / 2 + 0.35) continue;
+      if (Math.abs(lz) > SL / 2 + 0.35 || Math.abs(lx) > SW / 2 + 0.35) continue;
       if (spd > 3) {
         FC.people.hit(ch, car.vx, car.vz, spd);
         car.vx *= 1 - Math.min(0.2, 70 / S.mass); car.vz *= 1 - Math.min(0.2, 70 / S.mass);
@@ -583,13 +616,14 @@
     for (var i = 0; i < list.length; i++) {
       var car = list[i];
       if (car.driver === "player") continue;
-      var S = car.spec, dx = x - car.x, dz = z - car.z;
-      if (Math.abs(dx) > S.L || Math.abs(dz) > S.L) continue;
+      dims(car);
+      var dx = x - car.x, dz = z - car.z;
+      if (Math.abs(dx) > car.sL || Math.abs(dz) > car.sL) continue;
       var fx = Math.sin(car.heading), fz = Math.cos(car.heading);
       var lz = dx * fx + dz * fz, lx = dx * (-fz) + dz * fx;
-      var hl = S.L / 2 + r, hw = S.W / 2 + r;
+      var hl = car.sL / 2 + r, hw = car.sW / 2 + r;
       if (Math.abs(lz) >= hl || Math.abs(lx) >= hw) continue;
-      var spd = Math.hypot(car.vx, car.vz);
+      var spd = hyp(car.vx, car.vz);
       if (spd > 4 && performance.now() - (P.carHitAt || 0) > 900) {
         P.carHitAt = performance.now();
         P.damage(Math.min(60, spd * 3), "car");
@@ -651,13 +685,17 @@
     }
     pushLane(ai, e2, node.i, k2, s1);
   }
+  // водитель в полосе — конструктор, как у Car: одна форма; wait…panic дописывались по ходу — заведены сразу (0 ≡ «не было»)
+  function LaneAI(v0f, opt, aggr) {
+    this.mode = "lane"; this.wp = []; this.v0f = v0f; this.police = !!opt.police; this.bus = !!opt.bus; this.taxi = !!opt.taxi; this.moto = !!opt.moto;
+    this.emergency = !!opt.emergency; this.aggr = aggr; this.offset = 0; this.wait = 0; this.offT = 0; this.curbT = 0; this.yieldT = 0; this.panic = 0;
+  }
   function laneAI(e, from, k, d, opt) {
     opt = opt || {};
     // характер водителя: спокойный, обычный, лихач (быстрее, ближе к бамперу, чаще сигналит); спецмашины — быстро и мимо красного
     var aggr = !opt.bus && !opt.emergency && Math.random() < 0.2;
     var v0f = opt.emergency ? 1.45 : aggr ? 1.15 + Math.random() * 0.2 : opt.moto ? 1.05 + Math.random() * 0.25 : 0.8 + Math.random() * 0.28;
-    var ai = { mode: "lane", wp: [], v0f: v0f, police: !!opt.police, bus: !!opt.bus, taxi: !!opt.taxi, moto: !!opt.moto,
-      emergency: !!opt.emergency, aggr: aggr, offset: 0 };
+    var ai = new LaneAI(v0f, opt, aggr);
     pushLane(ai, M.edges[e], from, k, d);
     return ai;
   }
@@ -682,8 +720,40 @@
     return true;
   }
 
+  /* Кандидаты в лидеры — из корзин 64 м, собранных в начале хода (было: каждая машина в полосе — весь список, 45 × ~120
+     на кадр). Лидер — в квадрате ±50 м, корзины — с запасом 30 м на ход за кадр; кандидаты — в порядке списка (при равных
+     зазорах выигрывает тот же). Список менялся после сборки (машина появилась/пропала посреди хода) — полный перебор. */
+  var LCELL = 64, LREACH = 50 + 30, lgrid = new Map(), lcand = [], lcandN = 0, lgridVer = -1;
+  function lgridKey(gx, gz) { return (gx + 4096) * 8192 + gz + 4096; }
+  function lgridReset(b) { b.n = 0; }                // корзина {n, a} живёт между кадрами (хвост a за n — старый): без новых массивов
+  function leadGrid() {
+    if (lgrid.size > 600) lgrid.clear(); else lgrid.forEach(lgridReset);       // уехали далеко — старые клетки не копим
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i], k = lgridKey(Math.floor(o.x / LCELL), Math.floor(o.z / LCELL)), b = lgrid.get(k);
+      if (!b) lgrid.set(k, b = { n: 0, a: [] });
+      o.li = i; b.a[b.n++] = o;
+    }
+    lgridVer = listVer;
+  }
+  // кандидаты — в lcand, ответ — их число; −1 — корзины устарели, перебирать весь список
+  function leadCands(car) {
+    if (lgridVer !== listVer) return -1;
+    var n = 0, gx0 = Math.floor((car.x - LREACH) / LCELL), gx1 = Math.floor((car.x + LREACH) / LCELL);
+    var gz0 = Math.floor((car.z - LREACH) / LCELL), gz1 = Math.floor((car.z + LREACH) / LCELL);
+    for (var gx = gx0; gx <= gx1; gx++) for (var gz = gz0; gz <= gz1; gz++) {
+      var b = lgrid.get(lgridKey(gx, gz)); if (!b) continue;
+      for (var i = 0; i < b.n; i++) {               // вставкой — по месту в списке (кандидатов единицы-десятки; sort() выделял бы)
+        var o = b.a[i], j = n++;
+        while (j > 0 && lcand[j - 1].li > o.li) { lcand[j] = lcand[j - 1]; j--; }
+        lcand[j] = o;
+      }
+    }
+    for (var k = n; k < lcandN; k++) lcand[k] = null;       // не держать ссылки на убранные машины
+    return (lcandN = n);
+  }
   function driveLane(car, dt) {
-    var ai = car.ai, S = car.spec;
+    var ai = car.ai;
+    dims(car);
     ensurePath(ai);
     var fx = Math.sin(car.heading), fz = Math.cos(car.heading);
     // выкинуть пройденные точки
@@ -696,22 +766,22 @@
     // цель pure pursuit
     var Ld = FC.clamp(4 + 0.6 * car.v, 5, 18), tgt = ai.wp[ai.wp.length - 1];
     for (var i = 0; i < ai.wp.length; i++) {
-      var q = ai.wp[i]; if (Math.hypot(q.x - car.x, q.z - car.z) >= Ld) { tgt = q; break; }
+      var q = ai.wp[i]; if (hyp(q.x - car.x, q.z - car.z) >= Ld) { tgt = q; break; }
     }
     var tx = tgt.x, tz = tgt.z;
     if (ai.offset) { var ox = tgt.dx != null ? tgt.dz : fz, oz = tgt.dx != null ? -tgt.dx : -fx; tx += ox * ai.offset; tz += oz * ai.offset; }
     var dx = tx - car.x, dz = tz - car.z;
     var lf = dx * fx + dz * fz, lleft = dx * fz - dz * fx;              // вперёд, влево
     var kap = 2 * lleft / Math.max(Ld * Ld, 1);
-    var delta = FC.clamp(Math.atan(S.wb * kap), -S.maxSteer, S.maxSteer);
-    if (lf < 0) delta = Math.sign(lleft || 1) * S.maxSteer;
-    car.steer = delta / S.maxSteer;
+    var delta = FC.clamp(Math.atan(car.sWb * kap), -car.sMs, car.sMs);
+    if (lf < 0) delta = Math.sign(lleft || 1) * car.sMs;
+    car.steer = delta / car.sMs;
     // желаемая скорость: дорога × характер водителя, кап на поворотах
-    var v0 = Math.min((LIMIT[ai.wp[0].kind] || 12) * ai.v0f * (S.bus ? 0.8 : 1), S.vtop || 99);
+    var v0 = Math.min((LIMIT[ai.wp[0].kind] || 12) * ai.v0f * car.sBk, car.sVt);
     if (ai.panic > 0) { ai.panic -= dt; v0 *= 1.3; }
     var distAcc = 0, px = car.x, pz = car.z, stopD = 1e9, turnD = 1e9;
     for (var j = 0; j < ai.wp.length && distAcc < 60; j++) {
-      var w = ai.wp[j]; distAcc += Math.hypot(w.x - px, w.z - pz); px = w.x; pz = w.z;
+      var w = ai.wp[j]; distAcc += hyp(w.x - px, w.z - pz); px = w.x; pz = w.z;
       if (w.turn && turnD > 1e8) turnD = distAcc;
       if (w.stop && stopD > 1e8 && !ai.emergency) {
         var sig = FC.build.signal(w.stop.node, w.stop.axis, w.e);
@@ -726,21 +796,24 @@
     if (ai.emergency) { ai.offset = 1.6; ai.offT = 0.4; }
     else if (ai.moto && ai.wp[0].kind !== "st" && !(ai.yieldT > 0)) { ai.offset = 1.75; ai.offT = 0.4; }
     // лидер: ближайшая машина в коридоре впереди; игрок пешком на дороге — тоже
-    var lead = stopD, leadV = 0, half = S.L / 2, blockedBy = null;
-    for (var c = 0; c < list.length; c++) {
-      var o = list[c]; if (o === car || o.dead) continue;
+    var lead = stopD, leadV = 0, half = car.sL / 2, SW = car.sW, blockedBy = null;
+    var nc = leadCands(car), cand = nc < 0 ? list : lcand;
+    if (nc < 0) nc = list.length;
+    for (var c = 0; c < nc; c++) {
+      var o = cand[c]; if (o === car || o.dead) continue;
       var rx = o.x - car.x, rz = o.z - car.z;
       if (Math.abs(rx) > 50 || Math.abs(rz) > 50) continue;
       var f = rx * fx + rz * fz; if (f <= 0 || f > 45) continue;
       var lat = Math.abs(rx * fz - rz * fx);
-      if (lat > (o.spec.W + S.W) / 2 + 0.2) continue;
-      var gap = f - half - o.spec.L / 2;
+      dims(o);
+      if (lat > (o.sW + SW) / 2 + 0.2) continue;
+      var gap = f - half - o.sL / 2;
       if (gap < lead) { lead = gap; leadV = (o.ai && o.ai.mode === "lane") ? o.v : o.vx * fx + o.vz * fz; blockedBy = o; }
     }
     var P = FC.player;
     if (P.mode === "foot") {
       var prx = P.x - car.x, prz = P.z - car.z, pf = prx * fx + prz * fz;
-      if (pf > 0 && pf < 30 && Math.abs(prx * fz - prz * fx) < S.W / 2 + 0.8) { var pg = pf - half - 0.5; if (pg < lead) { lead = pg; leadV = 0; blockedBy = "player"; } }
+      if (pf > 0 && pf < 30 && Math.abs(prx * fz - prz * fx) < SW / 2 + 0.8) { var pg = pf - half - 0.5; if (pg < lead) { lead = pg; leadV = 0; blockedBy = "player"; } }
     }
     // IDM
     var a = ai.aggr || ai.emergency ? 3.4 : 2.5, b = 3, s0 = ai.aggr ? 1.6 : 2.5, Tg = ai.aggr ? 0.8 : ai.moto ? 0.7 : 1.2, v = car.v;
@@ -766,10 +839,10 @@
     } else ai.wait = 0;
     if (ai.offset) { ai.offT -= dt; if (ai.offT <= 0) ai.offset = 0; }
     // кинематика велосипеда
-    car.heading += car.v * Math.tan(delta) / S.wb * dt;
+    car.heading += car.v * Math.tan(delta) / car.sWb * dt;
     car.vx = Math.sin(car.heading) * car.v; car.vz = Math.cos(car.heading) * car.v;
     car.x += car.vx * dt; car.z += car.vz * dt;
-    car.w = car.v * Math.tan(delta) / S.wb;
+    car.w = car.v * Math.tan(delta) / car.sWb;
   }
 
   /* Погоня и любая езда «к точке»: физика + автопилот (fpolice даёт car.ai.target(car) → {x, z, v, ram}). */
@@ -781,7 +854,7 @@
     var dx = t.x - car.x, dz = t.z - car.z, d = Math.hypot(dx, dz);
     var lf = dx * fx + dz * fz, lleft = dx * fz - dz * fx;
     var err = Math.atan2(lleft, lf);
-    var spd = Math.hypot(car.vx, car.vz);
+    var spd = hyp(car.vx, car.vz);
     var inp = { steer: FC.clamp(err / (35 * D2R), -1, 1), throttle: 0, brake: 0 };
     var want = t.v != null ? t.v : S.vmax * 0.9;
     if (!t.ram && d < 9) want = Math.min(want, d * 0.8);
@@ -815,12 +888,12 @@
   }
   function surface(car, dt) {
     var s = FC.places && FC.places.surfaceAt ? FC.places.surfaceAt(car.x, car.z) : null, want = s != null ? s - 0.03 : 0;
-    car.gy = car.gy == null || dt <= 0 ? want : FC.damp(car.gy, want, 12, dt);
+    car.gy = !car.gyOk || dt <= 0 ? want : FC.damp(car.gy, want, 12, dt); car.gyOk = true;
   }
   function physSub(car, dt, inp) {
     surface(car, dt);
     if (car.driver === "player" || car.wet) water(car, dt, inp);
-    var spd = Math.hypot(car.vx, car.vz);
+    var spd = hyp(car.vx, car.vz);
     var n = Math.max(1, Math.min(8, Math.ceil(spd * dt / 0.45)));
     var h = dt / n;
     for (var i = 0; i < n; i++) {
@@ -835,7 +908,7 @@
   var drv = { steer: 0, rev: false, revT: 0 };
   function playerInput(car, dt) {
     var inp = { steer: 0, throttle: 0, brake: 0, hb: I.held("jump"), reverse: false, arcade: true };
-    var spd = Math.hypot(car.vx, car.vz), fx = Math.sin(car.heading), fz = Math.cos(car.heading), vF = car.vx * fx + car.vz * fz;
+    var spd = hyp(car.vx, car.vz), fx = Math.sin(car.heading), fz = Math.cos(car.heading), vF = car.vx * fx + car.vz * fz;
     var touchStick = I.touch && (Math.abs(I.mx) > 0.12 || Math.abs(I.mz) > 0.12) && !(I.held("fw") || I.held("bw") || I.held("lf") || I.held("rt"));
     if (touchStick) {
       // джойстик относительно камеры: куда тянешь — туда едешь
@@ -1042,6 +1115,8 @@
   // вид колёс (гараж): s — размер, w — ширина, c — оттенок диска
   var WHEEL_STYLE = { std: { s: 1, w: 1, c: [1, 1, 1] }, sport: { s: 0.97, w: 0.9, c: [1, 0.5, 0.45] },
     offroad: { s: 1.16, w: 1.3, c: [0.72, 0.7, 0.6] }, chrome: { s: 1.02, w: 1, c: [1.7, 1.7, 1.8] } };
+  // выгрузить в видеокарту только первые n экземпляров атрибута (остальные не рисуются: count = n)
+  function upd(a, n) { a.needsUpdate = true; if (a.clearUpdateRanges) { a.clearUpdateRanges(); a.addUpdateRange(0, n * a.itemSize); } }
   // ближний план — до LOD_D от камеры (модель типа, колёса крутятся, тени); дальше — силуэт класса одним мешем
   var LOD_D = G.Q.level === "high" ? 85 : G.Q.level === "mid" ? 60 : 45;
   function render(dt) {
@@ -1088,7 +1163,7 @@
       var pitchAll = car.pitch + (car.airPitch || 0);
       // вилли: поворот вокруг заднего колеса, а не центра — заднее колесо остаётся на асфальте
       var tu = car.tune, ws = tu && tu.wheels ? WHEEL_STYLE[tu.wheels] || WHEEL_STYLE.std : WHEEL_STYLE.std;
-      if (car.gy == null) surface(car, 0);                       // стоящие без физики (во дворе, на бульваре) — тоже на плитке
+      if (!car.gyOk) surface(car, 0);                            // стоящие без физики (во дворе, на бульваре) — тоже на плитке
       var y = (car.wrecked ? -0.08 : 0) + (car.y || 0) + car.gy + (pitchAll < 0 ? Math.sin(-pitchAll) * S.wb / 2 : 0) +
         (ws.s - 1) * S.wr - (tu && tu.lower ? tu.lower * 0.07 : 0);
       vP.set(car.x, y, car.z);
@@ -1148,17 +1223,20 @@
         nbeam++;
       }
     }
-    // пустой пул — меш выключен: 40 типов не должны стоить вызовов отрисовки
-    [POOL, POOL1, WPOOL].forEach(function (set) {
+    // пустой пул — меш выключен: 40 типов не должны стоить вызовов отрисовки. В видеокарту — только занятые экземпляры
+    // (раньше — весь буфер пула каждый кадр, и у пустых маяков и пятен фар днём тоже)
+    for (var ps = 0; ps < 3; ps++) {
+      var set = ps === 0 ? POOL : ps === 1 ? POOL1 : WPOOL;
       for (var q in set) {
         var pl = set[q], m = pl.mesh;
         m.count = pl.used; m.visible = pl.used > 0;
-        if (pl.used) { m.instanceMatrix.needsUpdate = true; if (m.instanceColor) m.instanceColor.needsUpdate = true; m.geometry.attributes.iLit.needsUpdate = true; }
+        if (pl.used) { upd(m.instanceMatrix, pl.used); if (m.instanceColor) upd(m.instanceColor, pl.used); upd(m.geometry.attributes.iLit, pl.used); }
       }
-    });
-    if (riderMesh) { riderMesh.count = nr; riderMesh.visible = nr > 0; riderMesh.instanceMatrix.needsUpdate = true; }
-    beaconMesh.count = nb; beaconMesh.visible = nb > 0; beaconMesh.instanceMatrix.needsUpdate = true; if (beaconMesh.instanceColor) beaconMesh.instanceColor.needsUpdate = true;
-    beams.count = nbeam; beams.visible = nbeam > 0; beams.instanceMatrix.needsUpdate = true; tails.count = nbeam; tails.visible = nbeam > 0; tails.instanceMatrix.needsUpdate = true;
+    }
+    if (riderMesh) { riderMesh.count = nr; riderMesh.visible = nr > 0; if (nr) upd(riderMesh.instanceMatrix, nr); }
+    beaconMesh.count = nb; beaconMesh.visible = nb > 0; if (nb) { upd(beaconMesh.instanceMatrix, nb); if (beaconMesh.instanceColor) upd(beaconMesh.instanceColor, nb); }
+    beams.count = nbeam; beams.visible = nbeam > 0; tails.count = nbeam; tails.visible = nbeam > 0;
+    if (nbeam) { upd(beams.instanceMatrix, nbeam); upd(tails.instanceMatrix, nbeam); }
     poolMat.opacity = night * 0.42; tailMat.opacity = night * 0.5;
     // фары игрока: настоящий прожектор (только high; объёмные конусы выглядели «пузырями» — убраны)
     var pc = P.mode === "car" ? P.car : null;
@@ -1202,6 +1280,7 @@
       if (d2 > lim * lim) remove(c);
     }
     // ход
+    leadGrid();
     for (var k = 0; k < list.length; k++) {
       var car = list[k];
       if (car.dead) continue;
@@ -1221,7 +1300,7 @@
       } else if (Math.abs(car.vx) + Math.abs(car.vz) > 0.05 || car.w) {
         physSub(car, dt, { free: true });
         if (car.ai && car.ai.mode === "free" && !car.ai.parkedByPlayer && !car.wrecked) {
-          car.ai.freeT = Math.hypot(car.vx, car.vz) < 0.3 ? (car.ai.freeT || 0) + dt : 0;
+          car.ai.freeT = hyp(car.vx, car.vz) < 0.3 ? (car.ai.freeT || 0) + dt : 0;
           if (car.ai.freeT > 2.5 && !car.ai.lost) toLane(car);
         }
       }
@@ -1241,13 +1320,15 @@
         if (car.burnT > 0) car.burnT -= dt;
       }
     }
-    // столкновения машин (рядом с игроком)
+    // столкновения машин (рядом с игроком). Диагональ кузова — из машины (dims: считается раз при смене spec), а не два
+    // Math.hypot и чтения spec на каждую из ~5000 пар за кадр до отсева по расстоянию; порядок пар и формула те же
     for (var a = 0; a < list.length; a++) {
       var A = list[a]; if (A.dead) continue;
       if (FC.dist2(A.x, A.z, P.x, P.z) > 140 * 140) continue;
+      dims(A);
       for (var b = a + 1; b < list.length; b++) {
         var B = list[b]; if (B.dead) continue;
-        var rr = (Math.hypot(A.spec.L, A.spec.W) + Math.hypot(B.spec.L, B.spec.W)) / 2 + 0.3;
+        var rr = (A.sD + dims(B).sD) / 2 + 0.3;
         if (Math.abs(A.x - B.x) > rr || Math.abs(A.z - B.z) > rr) continue;
         // два «дорожных» друг друга не толкают (у них IDM), но и не стоят друг в друге
         if (A.ai && A.ai.mode === "lane" && B.ai && B.ai.mode === "lane") { lanePair(A, B); continue; }
@@ -1275,9 +1356,10 @@
   }
   // дорожные машины не въезжают в дома и столбы, но мягко (без урона)
   function hitWorldSoft(car, px, pz) {
-    var cs = circles(car);
-    for (var i = 0; i < cs.length; i++) {
-      var r = M.collide(cs[i][0], cs[i][1], cs[i][2] * 0.85, { noProps: true, prev: { x: cs[i][0] + px - car.x, z: cs[i][1] + pz - car.z } });
+    var cs = csSoft, nc = circles(car, cs);
+    for (var i = 0; i < nc; i++) {
+      prevSoft.x = cs[i][0] + px - car.x; prevSoft.z = cs[i][1] + pz - car.z;
+      var r = M.collide(cs[i][0], cs[i][1], cs[i][2] * 0.85, optSoft);
       if (r.hit) { car.x += r.x - cs[i][0]; car.z += r.z - cs[i][1]; }
     }
   }
@@ -1294,7 +1376,7 @@
   // игрок за рулём: звук мотора, следы и дым шин, пожар внутри
   var skidAcc = 0;
   function playerExtras(car, dt) {
-    var spd = Math.hypot(car.vx, car.vz), S = car.spec;
+    var spd = hyp(car.vx, car.vz), S = car.spec;
     if (FC.audio && FC.audio.loop) {
       var gearPos = spd / S.vmax * 5, frac = gearPos - Math.floor(gearPos);
       var base = S.flat ? 0.4 + spd / S.vmax * 0.9 : 0.55 + frac * 0.75 + Math.floor(gearPos) * 0.06;
@@ -1325,7 +1407,7 @@
   function sirenSound() {
     if (!FC.audio || !FC.audio.loop) return;
     var P = FC.player, best = 1e9;
-    for (var i = 0; i < list.length; i++) { var c = list[i]; if (c.siren && !c.wrecked) best = Math.min(best, Math.hypot(c.x - P.x, c.z - P.z)); }
+    for (var i = 0; i < list.length; i++) { var c = list[i]; if (c.siren && !c.wrecked) best = Math.min(best, hyp(c.x - P.x, c.z - P.z)); }
     FC.audio.loop("siren", best < 160, { vol: Math.max(0, 1 - best / 160) });
   }
 
@@ -1340,7 +1422,7 @@
       var P = FC.player, cam = FC.cam;
       if (P && P.mode === "car" && P.car && cam) {
         var car = P.car, fx = Math.sin(car.heading), fz = Math.cos(car.heading);
-        var vF = car.vx * fx + car.vz * fz, sp = Math.hypot(car.vx, car.vz);
+        var vF = car.vx * fx + car.vz * fz, sp = hyp(car.vx, car.vz);
         if (camIdle > 1.2) {
           var behind = sp > 5 && vF > 0 ? Math.atan2(-car.vx, -car.vz) : car.heading + Math.PI;
           cam.yaw = FC.angDamp(cam.yaw, behind, 3.2, dt);

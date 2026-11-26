@@ -68,7 +68,7 @@
     A._port = true;
     if (A.player || !A.onGround || Math.abs(A.x - A.home.x) > 0.5 || Math.abs(A.z - A.home.z) > 0.5 || !onDeck(A.x, A.z, 0)) return;
     var z = Math.min(DK.z1 - 6, A.home.z + stands.indexOf(A.home.x) * 11);
-    A.z = z; A.home.z = z; A.g.position.z = z;
+    A.z = z; A.home.z = z; A.g.position.z = z; A.g.updateMatrix();
   }
 
   /* ---- Минск: машины дворов — не на полосе ------------------------------------------------------------------- */

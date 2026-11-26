@@ -354,6 +354,9 @@
       ATMS.push({ id: "atm" + B.id, x: x + d.nx * 0.9, z: z + d.nz * 0.9, B: B, screen: s });
     });
   })();
+  // витрины, вывески и банкоматы неподвижны (меняется только видимость стекла и камня): без автообновления матриц —
+  // иначе three пересчитывал их ~120 матриц каждый кадр
+  jewelGroup.traverse(function (o) { o.matrixAutoUpdate = false; o.updateMatrix(); });
   function hackAtm(A) {
     if (!cdOk(A.id)) { FC.hud.toast("Этот банкомат уже пустой. Завтра наполнят.", "", 2.2); return; }
     if (!FC.games) return;

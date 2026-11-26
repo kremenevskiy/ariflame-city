@@ -190,7 +190,15 @@
 
   /* ---- воздушные суда ------------------------------------------------------------------------------------ */
   var list = [], seq = 0;
-  var root = new T.Group(); root.name = "air"; G.add(root);
+  // корень и неподвижное (площадки, полоса, огни, вывески, неподвижные детали бортов) — без автообновления матриц:
+  // раньше three каждый кадр пересчитывал матрицы ~270 объектов авиации, даже стоящих. Двигается сам борт (A.g — как
+  // раньше), винты, роторы, пламя и ветроуказатель — у них автообновление остаётся.
+  var root = new T.Group(); root.name = "air"; root.matrixAutoUpdate = false; root.updateMatrix(); G.add(root);
+  function still(o) { o.matrixAutoUpdate = false; o.updateMatrix(); }
+  function stillParts(vis) {
+    var live = [vis.prop, vis.rotor, vis.tail, vis.flame];
+    (function walk(o) { o.children.forEach(function (c) { if (live.indexOf(c) >= 0) return; still(c); walk(c); }); })(vis.g);
+  }
   function spawn(type, x, z, yaw, opt) {
     var sp = SPEC[type]; if (!sp) return null;
     opt = opt || {};
@@ -202,6 +210,7 @@
       loopAcc: 0, rollAcc: 0, lowT: 0, lowCd: 0, landed: false, home: opt.home || null };
     A.q.setFromEuler(new T.Euler(0, A.yaw, 0, "YXZ"));
     place(A);
+    stillParts(vis);
     root.add(A.g);
     list.push(A);
     return A;
@@ -212,10 +221,12 @@
     A.g.traverse(function (o) { if (o.geometry && o.geometry !== BOX) o.geometry.dispose(); });
     if (A.pad && A.pad.heli === A) A.pad.heli = null;
   }
+  // борт пересобирает матрицу только когда его ставят (place): стоящий на площадке не тянет пересчёт своих деталей
   function place(A) {
     A.g.position.set(A.x, A.y, A.z);
     if (A.kind === "plane") A.g.quaternion.copy(A.q);
     else A.g.rotation.set(A.pitch, A.yaw, A.roll);
+    A.g.matrixAutoUpdate = false; A.g.updateMatrix();
   }
 
   /* ---- площадки ------------------------------------------------------------------------------------------ */
@@ -228,10 +239,10 @@
   var padMat = new T.MeshStandardMaterial({ map: padTex, roughness: 0.8, transparent: true, alphaTest: 0.1 });
   function addPad(x, z, y, B, type, name) {
     var m = new T.Mesh(new T.CircleGeometry(5, 32).rotateX(-Math.PI / 2), padMat);
-    m.position.set(x, y + 0.08, z); m.receiveShadow = G.Q.shadows; root.add(m);
+    m.position.set(x, y + 0.08, z); m.receiveShadow = G.Q.shadows; still(m); root.add(m);
     for (var i = 0; i < 4; i++) {
       var l = new T.Mesh(new T.SphereGeometry(0.14, 6, 4), lamp(0x5fd0ff));
-      l.position.set(x + Math.cos(i * Math.PI / 2 + 0.78) * 5.2, y + 0.15, z + Math.sin(i * Math.PI / 2 + 0.78) * 5.2); root.add(l);
+      l.position.set(x + Math.cos(i * Math.PI / 2 + 0.78) * 5.2, y + 0.15, z + Math.sin(i * Math.PI / 2 + 0.78) * 5.2); still(l); root.add(l);
     }
     var p = { x: x, z: z, y: y, B: B || null, type: type, name: name, heli: null, emptyT: 0 };
     pads.push(p);
@@ -353,6 +364,7 @@
     var sign = new T.Mesh(new T.PlaneGeometry(9, 1.4), new T.MeshStandardMaterial({ map: st, roughness: 0.6, side: T.DoubleSide }));
     sign.position.set(BOARD.x + 7, 3.4, BOARD.z - 2); root.add(sign);
     var post = new T.Mesh(new T.BoxGeometry(0.2, 3, 0.2), dark); post.position.set(BOARD.x + 7, 1.5, BOARD.z - 2); root.add(post);
+    [rwy, ap, lights, c1, c2, sign, post].forEach(still);
   })();
   function stockPlanes() {
     [["plane_prop", 900 + OX], ["plane_jet", 975 + OX], ["plane_jet", 1045 + OX]].forEach(function (p) {

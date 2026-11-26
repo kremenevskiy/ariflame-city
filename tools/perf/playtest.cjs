@@ -8,7 +8,8 @@
  */
 const path = require("path");
 const fs = require("fs");
-const { chromium } = require("playwright");
+// playwright из репо; на другой машине хватит playwright-core и своего Chrome: CHANNEL=chrome
+const { chromium } = (function () { try { return require("playwright"); } catch (e) { return require("playwright-core"); } })();
 /* global window, document, performance, PerformanceObserver, FC */
 const argv = process.argv.slice(2);
 const BASE = argv.find((a) => /^https?:/.test(a)) || "http://127.0.0.1:8080/";
@@ -56,7 +57,7 @@ function probe() {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
-  const browser = await chromium.launch({ headless: true, args: ["--use-angle=metal", "--ignore-gpu-blocklist", "--enable-precise-memory-info"] });
+  const browser = await chromium.launch({ headless: true, channel: process.env.CHANNEL || undefined, args: ["--use-angle=metal", "--ignore-gpu-blocklist", "--enable-precise-memory-info"] });
   const opt = Object.assign({}, DEV);
   if (VIDEO) opt.recordVideo = { dir: OUT, size: PHONE ? { width: 390, height: 844 } : { width: 1280, height: 800 } };
   const ctx = await browser.newContext(opt);

@@ -65,7 +65,8 @@
   var col = new T.Color();
   function rgb(hex, k) { col.set(hex); if (k) col.multiplyScalar(k); return [col.r, col.g, col.b]; }
 
-  var root = new T.Group(); root.name = "city"; G.add(root);
+  // город неподвижен: без автообновления группы three не пересчитывает матрицы всех её потомков каждый кадр
+  var root = new T.Group(); root.name = "city"; root.matrixAutoUpdate = false; root.updateMatrix(); G.add(root);
   function addTo(m) { G.scene.remove(m); root.add(m); return m; }
 
   /* ---- земля: за городом трава до горизонта, пляж и море на юге ------------------------------------------ */

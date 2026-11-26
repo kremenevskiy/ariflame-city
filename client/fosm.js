@@ -35,7 +35,9 @@
   var useTex = typeof G.facadeTex === "function";
   if (useTex) G.facadeTex(true);
 
-  var root = new T.Group(); root.name = "minsk"; G.add(root);
+  // группы города неподвижны: с автообновлением матриц three каждый кадр пересчитывал матрицы ВСЕХ потомков (сотни
+  // мешей кусков; замер 26.11 — заметная доля JS кадра на телефоне). Движущееся внутри (подложка-земля) обновляет себя само.
+  var root = new T.Group(); root.name = "minsk"; root.matrixAutoUpdate = false; root.updateMatrix(); G.add(root);
   var facadeMat = G.mat.facade(), roadMat = G.mat.road(), waterMat = G.mat.water();
   var flatMat = G.mat.ground ? G.mat.ground() : new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 });
   var treeMat = G.mat.tree ? G.mat.tree() : new T.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true });
@@ -935,7 +937,7 @@
     grp.add(m); return m;
   }
   function finish(J) {
-    var grp = new T.Group(); grp.name = "s" + J.key;
+    var grp = new T.Group(); grp.name = "s" + J.key; grp.matrixAutoUpdate = false; grp.updateMatrix();
     var houses = addMesh(grp, geoOf(J.A), facadeMat, true);
     if (houses && G.shadowCells) G.shadowCells(houses, 128);            // в проходе теней — только клетки у игрока (fgfx)
     addMesh(grp, J.roads.length ? T.mergeGeometries(J.roads, false) : null, roadMat, false);

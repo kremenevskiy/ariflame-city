@@ -303,8 +303,8 @@
     composer.addPass(outPass);
     safeHdr(bloom.materialHighPassFilter, outPass.material);
     // свечение — с четверти разрешения, а не с половины: оно и так размыто пятью уровнями, а стоило ~треть кадра
-    var bset = bloom.setSize;
-    bloom.setSize = function (w, h) { bset.call(this, Math.max(2, Math.round(w / 2)), Math.max(2, Math.round(h / 2))); };
+    var bset = bloom.setSize, bdiv = /[?&]bloom=half/.test(global.location.search) ? 1 : 2;     // ?bloom=half — как раньше, для сравнения
+    bloom.setSize = function (w, h) { bset.call(this, Math.max(2, Math.round(w / bdiv)), Math.max(2, Math.round(h / bdiv))); };
     var pr = renderer.getPixelRatio();
     composer.setPixelRatio(pr); composer.setSize(global.innerWidth, global.innerHeight);
   }
@@ -1170,7 +1170,7 @@
             Math.hypot(o.x1 - o.x0, o.y1 - o.y0, o.z1 - o.z0) / 2 + 0.5);
           var m = new T.Mesh(vg, mesh.material);
           m.castShadow = true; m.receiveShadow = false; m.visible = false; m.matrixAutoUpdate = false;
-          m.matrix.copy(mesh.matrix); m.userData.shadowView = true;
+          m.matrix.copy(mesh.matrix); m.matrixWorldNeedsUpdate = true; m.userData.shadowView = true;
           mesh.parent.add(m); views.push(m);
         });
         mesh.castShadow = false;

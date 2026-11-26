@@ -1039,14 +1039,20 @@
     if (tqPend.length > 8) { tqPend.forEach(function (x) { gl.deleteQuery(x); }); tqPend.length = 0; }
   }
   G.gpuMs = function () { return tq ? gpuLast : null; };
+  // Режим энергосбережения iPhone (и экраны 30 Гц) сам даёт ровные ~33 мс: это не перегрузка — опоздания считаем от
+  // такой частоты. Узнаём по окну: середина промежутков ≥ 1,6 от нашей и почти все рядом с ней.
+  var drIv = new Float32Array(240), drIvN = 0;
   function dynRes() {
     var now = performance.now(), ms = now - drLast; drLast = now;
     if (drOff || qs || document.hidden || FC.paused || holdN > 0 || ms > 250) return;      // пауза/свёрнуто — не мерим
-    var iv = 1000 / (capFps || 60);
-    drN++; drT += ms; if (ms > iv * 1.5) drMiss++;
+    drN++; drT += ms; if (drIvN < drIv.length) drIv[drIvN++] = ms;
     if (drT < 2000) return;
+    var iv = 1000 / (capFps || 60), srt = Array.prototype.slice.call(drIv, 0, drIvN).sort(function (a, b) { return a - b; });
+    var med = srt[srt.length >> 1] || iv, p90 = srt[Math.floor(srt.length * 0.9)] || iv;
+    if (med > iv * 1.6 && p90 < med * 1.25) iv = med;             // частоту ограничивает система, а не нагрузка
+    for (var mi = 0; mi < drIvN; mi++) if (drIv[mi] > iv * 1.5) drMiss++;
     var miss = drMiss / Math.max(1, drN), gpu = gpuN >= 10 ? gpuSum / gpuN : -1;
-    drT = 0; drN = 0; drMiss = 0; gpuSum = 0; gpuN = 0;
+    drT = 0; drN = 0; drMiss = 0; drIvN = 0; gpuSum = 0; gpuN = 0;
     var heavy = gpu >= 0 ? gpu > iv * 0.7 || miss > 0.2 : miss > 0.2;
     var light = gpu >= 0 ? gpu < iv * 0.4 && miss < 0.05 : miss < 0.03;
     var next = drScale;

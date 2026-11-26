@@ -1214,7 +1214,12 @@
     if (on === false) {                                                  // снять: вернуть полный список экземпляров
       var e0 = mesh.userData.cull; if (!e0) return;
       cullSets.splice(cullSets.indexOf(e0), 1); mesh.userData.cull = null;
-      mesh.instanceMatrix.array.set(e0.M.subarray(0, e0.n * 16)); if (mesh.instanceColor && e0.C) mesh.instanceColor.array.set(e0.C.subarray(0, e0.n * 3));
+      // полный список хранится по клеткам — возвращаем экземпляры на их исходные номера (владелец пишет по номеру)
+      var A0 = mesh.instanceMatrix.array, C0 = mesh.instanceColor && e0.C ? mesh.instanceColor.array : null;
+      for (var j0 = 0; j0 < e0.n; j0++) {
+        var o0 = e0.ord[j0]; A0.set(e0.M.subarray(j0 * 16, j0 * 16 + 16), o0 * 16);
+        if (C0) { C0[o0 * 3] = e0.C[j0 * 3]; C0[o0 * 3 + 1] = e0.C[j0 * 3 + 1]; C0[o0 * 3 + 2] = e0.C[j0 * 3 + 2]; }
+      }
       mesh.count = e0.n; mesh.instanceMatrix.clearUpdateRanges(); mesh.instanceMatrix.needsUpdate = true;
       if (mesh.instanceColor) { mesh.instanceColor.clearUpdateRanges(); mesh.instanceColor.needsUpdate = true; }
       return;
@@ -1225,23 +1230,50 @@
     mesh.userData.cull = e; cullSets.push(e);
     if (mesh.count) G.instChanged(mesh);
   };
+  // полный список — по клеткам 64 м подряд: отбор сначала по сфере клетки (вся в кадре — целиком, вся вне — мимо),
+  // по одному — только в клетках на краю кадра; целые клетки копируются в буфер меша одним блоком
+  var CELL = 64;
   G.instChanged = function (mesh) {
     var e = mesh && mesh.userData.cull; if (!e) return;
     var n = mesh.count, A = mesh.instanceMatrix.array, IC = mesh.instanceColor;
     if (e.cap < n) { e.cap = Math.max(n, 16); e.M = new Float32Array(e.cap * 16); e.S = new Float32Array(e.cap * 4); e.C = IC ? new Float32Array(e.cap * 3) : null; }
     if (IC && !e.C) e.C = new Float32Array(e.cap * 3);
-    e.M.set(A.subarray(0, n * 16)); if (IC) e.C.set(IC.array.subarray(0, n * 3));
     var bs = mesh.geometry.boundingSphere, c = bs.center, r = bs.radius;
+    // клетка каждого экземпляра, порядок по клеткам
+    var key = new Float64Array(n), ord = new Array(n);
     for (var i = 0; i < n; i++) {
-      var o = i * 16, M = e.M;
-      var sx = Math.hypot(M[o], M[o + 1], M[o + 2]), sy = Math.hypot(M[o + 4], M[o + 5], M[o + 6]), sz = Math.hypot(M[o + 8], M[o + 9], M[o + 10]);
-      e.S[i * 4] = M[o] * c.x + M[o + 4] * c.y + M[o + 8] * c.z + M[o + 12];
-      e.S[i * 4 + 1] = M[o + 1] * c.x + M[o + 5] * c.y + M[o + 9] * c.z + M[o + 13];
-      e.S[i * 4 + 2] = M[o + 2] * c.x + M[o + 6] * c.y + M[o + 10] * c.z + M[o + 14];
-      e.S[i * 4 + 3] = r * Math.max(sx, sy, sz);
+      var o = i * 16;
+      var wx = A[o] * c.x + A[o + 4] * c.y + A[o + 8] * c.z + A[o + 12], wz = A[o + 2] * c.x + A[o + 6] * c.y + A[o + 10] * c.z + A[o + 14];
+      key[i] = Math.floor(wx / CELL) * 65536 + Math.floor(wz / CELL); ord[i] = i;
     }
-    e.n = n; cullDirty = true;
+    ord.sort(function (x, y) { return key[x] - key[y]; });
+    var M = e.M, S = e.S, C = e.C, cells = [], cur = null;
+    for (var j = 0; j < n; j++) {
+      var src = ord[j], so = src * 16, d = j * 16;
+      for (var q = 0; q < 16; q++) M[d + q] = A[so + q];
+      if (IC) { C[j * 3] = IC.array[src * 3]; C[j * 3 + 1] = IC.array[src * 3 + 1]; C[j * 3 + 2] = IC.array[src * 3 + 2]; }
+      var sx = Math.hypot(M[d], M[d + 1], M[d + 2]), sy = Math.hypot(M[d + 4], M[d + 5], M[d + 6]), sz = Math.hypot(M[d + 8], M[d + 9], M[d + 10]);
+      var x = M[d] * c.x + M[d + 4] * c.y + M[d + 8] * c.z + M[d + 12], y = M[d + 1] * c.x + M[d + 5] * c.y + M[d + 9] * c.z + M[d + 13];
+      var z = M[d + 2] * c.x + M[d + 6] * c.y + M[d + 10] * c.z + M[d + 14], rr = r * Math.max(sx, sy, sz);
+      S[j * 4] = x; S[j * 4 + 1] = y; S[j * 4 + 2] = z; S[j * 4 + 3] = rr;
+      if (!cur || key[src] !== cur.k) { cur = { k: key[src], s: j, n: 0, x0: 1e9, y0: 1e9, z0: 1e9, x1: -1e9, y1: -1e9, z1: -1e9 }; cells.push(cur); }
+      cur.n++;
+      if (x - rr < cur.x0) cur.x0 = x - rr; if (x + rr > cur.x1) cur.x1 = x + rr; if (y - rr < cur.y0) cur.y0 = y - rr; if (y + rr > cur.y1) cur.y1 = y + rr;
+      if (z - rr < cur.z0) cur.z0 = z - rr; if (z + rr > cur.z1) cur.z1 = z + rr;
+    }
+    cells.forEach(function (k) { k.x = (k.x0 + k.x1) / 2; k.y = (k.y0 + k.y1) / 2; k.z = (k.z0 + k.z1) / 2; k.r = Math.hypot(k.x1 - k.x0, k.y1 - k.y0, k.z1 - k.z0) / 2; });
+    e.n = n; e.cells = cells; e.ord = ord; cullDirty = true;
   };
+  // сфера против плоскостей кадра с запасом: 1 — целиком внутри, 0 — снаружи, 0.5 — на краю
+  function sphereIn(x, y, z, r, cx, cy, cz) {
+    var pad = 4 + 0.25 * Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz)), res = 1;
+    for (var p = 0; p < 24; p += 4) {
+      var dd = PL[p] * x + PL[p + 1] * y + PL[p + 2] * z + PL[p + 3];
+      if (dd < -(r + pad)) return 0;
+      if (dd < r) res = 0.5;
+    }
+    return res;
+  }
   function cullInstances() {
     if (!cullSets.length) return;
     camera.updateMatrixWorld();
@@ -1250,21 +1282,30 @@
     cullDirty = false; cullPos.copy(camera.position); cullDir.copy(cV); cullFov = camera.fov; cullAsp = camera.aspect;
     cM.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse); planesOf(cM);
     var cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
-    var f = G.focus || camera.position, SR = SC * 1.3, SR2 = SR * SR, MARG = 0.25;   // tan 14°
+    var f = G.focus || camera.position, SR = SC * 1.3;
     for (var s = 0; s < cullSets.length; s++) {
       var e = cullSets[s], m = e.m; if (!inScene(m)) { if (!m.parent) cullSets.splice(s--, 1); continue; }
-      var A = m.instanceMatrix.array, IC = m.instanceColor, S = e.S, k = 0, keepSh = m.castShadow && Q.shadows;
-      for (var i = 0; i < e.n; i++) {
-        var x = S[i * 4], y = S[i * 4 + 1], z = S[i * 4 + 2], r = S[i * 4 + 3], ok = true;
-        if (!(keepSh && (x - f.x) * (x - f.x) + (z - f.z) * (z - f.z) < SR2)) {
-          var pad = r + 4 + MARG * Math.sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy) + (z - cz) * (z - cz));
-          for (var p = 0; p < 24; p += 4) { if (PL[p] * x + PL[p + 1] * y + PL[p + 2] * z + PL[p + 3] < -pad) { ok = false; break; } }
+      if (!e.cells) continue;
+      var A = m.instanceMatrix.array, IC = m.instanceColor, S = e.S, M = e.M, C = e.C, k = 0, keepSh = m.castShadow && Q.shadows;
+      for (var ci = 0; ci < e.cells.length; ci++) {
+        var cl = e.cells[ci];
+        // тень: всё в радиусе карты теней остаётся (тень дерева за спиной падает в кадр)
+        var nearSh = keepSh && Math.hypot(cl.x - f.x, cl.z - f.z) < SR + cl.r;
+        var w = sphereIn(cl.x, cl.y, cl.z, cl.r, cx, cy, cz);
+        if (w === 0 && !nearSh) continue;
+        if (w === 1 || (nearSh && Math.hypot(cl.x - f.x, cl.z - f.z) + cl.r < SR)) {   // клетка целиком — одним блоком
+          A.set(M.subarray(cl.s * 16, (cl.s + cl.n) * 16), k * 16);
+          if (IC) IC.array.set(C.subarray(cl.s * 3, (cl.s + cl.n) * 3), k * 3);
+          k += cl.n; continue;
         }
-        if (!ok) continue;
-        // буфер меша — выход прошлого отбора: копируем из полного списка всегда
-        for (var q = 0; q < 16; q++) A[k * 16 + q] = e.M[i * 16 + q];
-        if (IC) { IC.array[k * 3] = e.C[i * 3]; IC.array[k * 3 + 1] = e.C[i * 3 + 1]; IC.array[k * 3 + 2] = e.C[i * 3 + 2]; }
-        k++;
+        for (var i = cl.s; i < cl.s + cl.n; i++) {
+          var x = S[i * 4], y = S[i * 4 + 1], z = S[i * 4 + 2], r = S[i * 4 + 3];
+          var ok = (nearSh && (x - f.x) * (x - f.x) + (z - f.z) * (z - f.z) < SR * SR) || sphereIn(x, y, z, r, cx, cy, cz) > 0;
+          if (!ok) continue;
+          for (var q = 0; q < 16; q++) A[k * 16 + q] = M[i * 16 + q];
+          if (IC) { IC.array[k * 3] = C[i * 3]; IC.array[k * 3 + 1] = C[i * 3 + 1]; IC.array[k * 3 + 2] = C[i * 3 + 2]; }
+          k++;
+        }
       }
       m.count = k;
       if (k) {

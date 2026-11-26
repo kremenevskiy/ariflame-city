@@ -447,28 +447,60 @@
   });
 
   /* ---- мгновенный повтор: запись --------------------------------------------------------------------------- */
-  var BUF = [], REC = 1 / 15, KEEP = 8, recT = 0;
+  /* Кадр записи: t; p — игрок [x, y, z, курс, в машине]; pc — его фигура [face, tilt, lean, speed, phase, visible, y] или
+     null; cars/peds — машины и люди рядом, их числа — подряд в cv (CN на машину: x, z, курс, vx, vz, y, крен, тангаж, hp,
+     разбита, руль, скрыта) и hv (HN на человека: x, y, z, face, tilt, knocked, speed, phase, alpha, visible).
+     Записываются те же числа, что раньше, но кадры переиспользуются: вышедший за 8 с уходит в запас и заполняется заново,
+     числа лежат в Float64Array. Раньше 15 раз в секунду — новый кадр и до 80 массивов с числами в куче (~1200 массивов
+     в секунду), живших по 8 с: они доживали до старой кучи и чистились полной сборкой мусора. В повторе (RP.frames —
+     копия BUF) запись стоит, кадры не меняются. */
+  var BUF = [], REC = 1 / 15, KEEP = 8, recT = 0, SPARE = [], CMAX = 30, HMAX = 50, CN = 12, HN = 10;
+  function newFrame() {
+    return { t: 0, p: new Float64Array(5), pc: null, pcv: new Float64Array(7), cars: [], cv: new Float64Array(CMAX * CN),
+      peds: [], hv: new Float64Array(HMAX * HN) };
+  }
   function snap() {
     var P = FC.player, now = performance.now() / 1000, pc = P.ch;
-    var fr = { t: now, p: [P.x, P.y || 0, P.z, P.heading, P.mode === "car" ? 1 : 0], pc: pc ? [pc.face || 1, pc.tilt || 0, pc.lean || 0, pc.speed || 0, pc.phase || 0, pc.visible ? 1 : 0, pc.y || 0] : null, cars: [], peds: [] };
-    var L = FC.cars ? FC.cars.list : [];
-    for (var i = 0; i < L.length && fr.cars.length < 30; i++) {
+    var fr = SPARE.pop() || newFrame(), q = fr.p;
+    fr.t = now;
+    q[0] = P.x; q[1] = P.y || 0; q[2] = P.z; q[3] = P.heading; q[4] = P.mode === "car" ? 1 : 0;
+    if (pc) {
+      q = fr.pc = fr.pcv;
+      q[0] = pc.face || 1; q[1] = pc.tilt || 0; q[2] = pc.lean || 0; q[3] = pc.speed || 0; q[4] = pc.phase || 0; q[5] = pc.visible ? 1 : 0; q[6] = pc.y || 0;
+    } else fr.pc = null;
+    var L = FC.cars ? FC.cars.list : [], nc = 0, v = fr.cv, o;
+    for (var i = 0; i < L.length && nc < CMAX; i++) {
       var c = L[i]; if (c.dead || FC.dist2(c.x, c.z, P.x, P.z) > 90 * 90) continue;
-      fr.cars.push([c, c.x, c.z, c.heading, c.vx || 0, c.vz || 0, c.y || 0, c.roll || 0, c.pitch || 0, c.hp, c.wrecked ? 1 : 0, c.steer || 0, c.hidden ? 1 : 0]);
+      o = nc * CN; fr.cars[nc++] = c;
+      v[o] = c.x; v[o + 1] = c.z; v[o + 2] = c.heading; v[o + 3] = c.vx || 0; v[o + 4] = c.vz || 0; v[o + 5] = c.y || 0; v[o + 6] = c.roll || 0;
+      v[o + 7] = c.pitch || 0; v[o + 8] = c.hp; v[o + 9] = c.wrecked ? 1 : 0; v[o + 10] = c.steer || 0; v[o + 11] = c.hidden ? 1 : 0;
     }
-    var A = FC.people.all;
-    for (var j = 0; j < A.length && fr.peds.length < 50; j++) {
+    if (fr.cars.length !== nc) fr.cars.length = nc;
+    var A = FC.people.all, np = 0;
+    v = fr.hv;
+    for (var j = 0; j < A.length && np < HMAX; j++) {
       var h = A[j]; if (h.kind === "player" || h.inside != null || h.room != null || FC.dist2(h.x, h.z, P.x, P.z) > 60 * 60) continue;
-      fr.peds.push([h, h.x, h.y, h.z, h.face || 1, h.tilt || 0, h.knocked || 0, h.speed || 0, h.phase || 0, h.alpha == null ? 1 : h.alpha, h.visible === false ? 0 : 1]);
+      o = np * HN; fr.peds[np++] = h;
+      v[o] = h.x; v[o + 1] = h.y; v[o + 2] = h.z; v[o + 3] = h.face || 1; v[o + 4] = h.tilt || 0; v[o + 5] = h.knocked || 0; v[o + 6] = h.speed || 0;
+      v[o + 7] = h.phase || 0; v[o + 8] = h.alpha == null ? 1 : h.alpha; v[o + 9] = h.visible === false ? 0 : 1;
     }
+    if (fr.peds.length !== np) fr.peds.length = np;
     BUF.push(fr);
-    while (BUF.length && now - BUF[0].t > KEEP) BUF.shift();
+    while (BUF.length && now - BUF[0].t > KEEP) spare(BUF.shift());
   }
+  // кадр — в запас; ссылки на машины и людей обнуляем (длину не трогаем: массив не перевыделяется), чтобы не держать убранных
+  function spare(fr) {
+    for (var i = 0; i < fr.cars.length; i++) fr.cars[i] = null;
+    for (var j = 0; j < fr.peds.length; j++) fr.peds[j] = null;
+    SPARE.push(fr);
+  }
+  // все кадры — в запас (вошёл в здание: повтор улицы обнуляется, как раньше)
+  function dropAll() { while (BUF.length) spare(BUF.pop()); }
   FC.addSystem({
     name: "replayrec", order: 97,
     update: function (dt) {
       if (!FC.started || RP.on || PM.on) return;
-      if (FC.inside && FC.inside.active) { BUF.length = 0; return; }
+      if (FC.inside && FC.inside.active) { dropAll(); return; }
       recT -= dt; if (recT > 0) return;
       recT = REC; snap();
     }
@@ -493,8 +525,8 @@
     (FC.cars ? FC.cars.list : []).forEach(function (c) { sv.cars.set(c, [c.x, c.z, c.heading, c.vx, c.vz, c.y, c.roll, c.pitch, c.hp, c.wrecked, c.steer, c.hidden]); });
     FC.people.all.forEach(function (h) { if (h.kind !== "player") sv.peds.set(h, [h.x, h.y, h.z, h.face, h.tilt, h.knocked, h.speed, h.phase, h.alpha, h.visible]); });
     RP.frames.forEach(function (f) {
-      f.cars.forEach(function (c) { if (!sv.cars.has(c[0])) sv.cars.set(c[0], null); });
-      f.peds.forEach(function (h) { if (!sv.peds.has(h[0])) sv.peds.set(h[0], null); });
+      f.cars.forEach(function (c) { if (!sv.cars.has(c)) sv.cars.set(c, null); });
+      f.peds.forEach(function (h) { if (!sv.peds.has(h)) sv.peds.set(h, null); });
     });
     RP.saved = sv;
     var c = G.camera.position, fp = playerFocus(new T.Vector3());
@@ -530,20 +562,23 @@
     var P = FC.player;
     P.x = FC.lerp(A.p[0], B.p[0], k); P.y = FC.lerp(A.p[1], B.p[1], k); P.z = FC.lerp(A.p[2], B.p[2], k); P.heading = lerpA(A.p[3], B.p[3], k);
     if (P.ch && A.pc) { var c0 = A.pc, c1 = B.pc || A.pc; P.ch.x = P.x; P.ch.z = P.z; P.ch.y = FC.lerp(c0[6], c1[6], k); P.ch.face = c0[0]; P.ch.tilt = FC.lerp(c0[1], c1[1], k); P.ch.lean = c0[2]; P.ch.speed = c0[3]; P.ch.phase = c0[4]; P.ch.visible = !!c0[5]; }
-    var bm = new Map(); B.cars.forEach(function (c) { bm.set(c[0], c); });
-    var seen = new Set();
-    A.cars.forEach(function (a) {
-      var c = a[0], b = bm.get(c) || a; seen.add(c);
-      c.x = FC.lerp(a[1], b[1], k); c.z = FC.lerp(a[2], b[2], k); c.heading = lerpA(a[3], b[3], k); c.vx = a[4]; c.vz = a[5]; c.y = FC.lerp(a[6], b[6], k);
-      c.roll = a[7]; c.pitch = a[8]; c.hp = a[9]; c.wrecked = !!a[10]; c.steer = a[11]; c.hidden = !!a[12]; c._rpHid = false;
+    // a — числа машины в кадре A, b — в кадре B (нет в B — те же, что в A); индексы — как у строки записи (см. snap)
+    var bm = new Map(); B.cars.forEach(function (c, ib) { bm.set(c, ib); });
+    var seen = new Set(), a, b, av = A.cv;
+    A.cars.forEach(function (c, ia) {
+      var ib = bm.get(c), bv = ib != null ? B.cv : av; a = ia * CN; b = ib != null ? ib * CN : a; seen.add(c);
+      c.x = FC.lerp(av[a], bv[b], k); c.z = FC.lerp(av[a + 1], bv[b + 1], k); c.heading = lerpA(av[a + 2], bv[b + 2], k); c.vx = av[a + 3]; c.vz = av[a + 4];
+      c.y = FC.lerp(av[a + 5], bv[b + 5], k); c.roll = av[a + 6]; c.pitch = av[a + 7]; c.hp = av[a + 8]; c.wrecked = !!av[a + 9]; c.steer = av[a + 10];
+      c.hidden = !!av[a + 11]; c._rpHid = false;
     });
     RP.saved.cars.forEach(function (v, c) { if (!seen.has(c)) { c.hidden = true; c._rpHid = true; } });
-    var pm = new Map(); B.peds.forEach(function (h) { pm.set(h[0], h); });
-    var seenP = new Set();
-    A.peds.forEach(function (a) {
-      var h = a[0], b = pm.get(h) || a; seenP.add(h);
-      h.x = FC.lerp(a[1], b[1], k); h.y = FC.lerp(a[2], b[2], k); h.z = FC.lerp(a[3], b[3], k); h.face = a[4]; h.tilt = FC.lerp(a[5], b[5], k);
-      h.knocked = a[6]; h.speed = a[7]; h.phase = FC.lerp(a[8], b[8], k); h.alpha = a[9]; h.visible = !!a[10]; h._rpHid = false;
+    var pm = new Map(); B.peds.forEach(function (h, ib) { pm.set(h, ib); });
+    var seenP = new Set(), hv = A.hv;
+    A.peds.forEach(function (h, ia) {
+      var ib = pm.get(h), bv = ib != null ? B.hv : hv; a = ia * HN; b = ib != null ? ib * HN : a; seenP.add(h);
+      h.x = FC.lerp(hv[a], bv[b], k); h.y = FC.lerp(hv[a + 1], bv[b + 1], k); h.z = FC.lerp(hv[a + 2], bv[b + 2], k); h.face = hv[a + 3];
+      h.tilt = FC.lerp(hv[a + 4], bv[b + 4], k); h.knocked = hv[a + 5]; h.speed = hv[a + 6]; h.phase = FC.lerp(hv[a + 7], bv[b + 7], k);
+      h.alpha = hv[a + 8]; h.visible = !!hv[a + 9]; h._rpHid = false;
     });
     RP.saved.peds.forEach(function (v, h) { if (!seenP.has(h)) { h.visible = false; h._rpHid = true; } });
     if (FC.cars && FC.cars.render) FC.cars.render(1 / 60);

@@ -42,14 +42,21 @@
   var live = document.createElement("div"); live.className = "fc-live";
   var speedo = document.createElement("div"); speedo.className = "fc-speedo";
   document.body.appendChild(bar); document.body.appendChild(live); document.body.appendChild(speedo);
-  var speedoCar = null, speedoKmh = -1;
+  /* Спидометр: разметка «число<small>КМ/Ч</small><i>имя</i>» собирается раз на машину, дальше на каждый км/ч меняется
+     только текст числа. Раньше на каждый км/ч (на ходу — почти каждый кадр) — innerHTML целиком (разбор HTML, новые
+     узлы) и C.info() (новый объект). Вид тот же. */
+  var speedoCar = null, speedoKmh = -1, speedoNum = null;
   function speedoTick(car) {
-    var kmh = Math.round(Math.hypot(car.vx, car.vz) * 3.6);
-    if (car !== speedoCar) { speedoCar = car; speedoKmh = -1; }
+    var vx = car.vx, vz = car.vz, kmh = Math.round(Math.sqrt(vx * vx + vz * vz) * 3.6);
+    if (car !== speedoCar) {
+      speedoCar = car; speedoKmh = -1;
+      var inf = C.info ? C.info(car.type) : null;
+      speedo.innerHTML = "<small>КМ/Ч</small><i>" + (inf ? inf.name : car.spec.name) + "</i>";
+      speedoNum = document.createTextNode(""); speedo.insertBefore(speedoNum, speedo.firstChild);
+    }
     if (kmh === speedoKmh) return;
     speedoKmh = kmh;
-    var inf = C.info ? C.info(car.type) : null;
-    speedo.innerHTML = kmh + "<small>КМ/Ч</small><i>" + (inf ? inf.name : car.spec.name) + "</i>";
+    speedoNum.data = String(kmh);
   }
   // сел — имя, класс и максималка; у каждой машины свой характер (fcarlist.js)
   FC.on("car:enter", function (e) {
@@ -388,20 +395,22 @@
   }
 
   /* ---- кадр ------------------------------------------------------------------------------------------------------- */
-  var yT = 0;
+  var yT = 0, inCarCls = null, barH = -1, barOn = null;
   FC.addSystem({
     name: "cars2", order: 21,
     update: function (dt) {
       var P = FC.player; if (!P || !FC.started) return;
       var car = P.mode === "car" ? P.car : null;
-      document.body.classList.toggle("fc-incar", !!car);
+      // DOM — только при изменении (класс body и высота шкалы нитро писались каждый кадр)
+      if (inCarCls !== !!car) { inCarCls = !!car; document.body.classList.toggle("fc-incar", inCarCls); }
       if (car) {
         rampTick(car, dt);
         stuntTick(car, dt);
-        bar.firstChild.nextSibling.style.height = Math.round(N.tank * 100) + "%";
+        var tankH = Math.round(N.tank * 100);
+        if (tankH !== barH) { barH = tankH; bar.firstChild.nextSibling.style.height = tankH + "%"; }
         speedoTick(car);
-        bar.classList.toggle("on", N.on);
-        var spd = Math.hypot(car.vx, car.vz);
+        if (barOn !== !!N.on) { barOn = !!N.on; bar.classList.toggle("on", barOn); }
+        var spd = Math.sqrt(car.vx * car.vx + car.vz * car.vz);
         if (fx("speed")) fx("speed")(N.on ? 1 : FC.clamp((spd - 24) / 30, 0, 0.6));
         // пламя из выхлопа на нитро
         if (N.on) {
@@ -415,8 +424,11 @@
         live.classList.remove("on");
         if (fx("speed")) fx("speed")(0);
       }
-      // машины, оставшиеся в воздухе без игрока, — на землю
-      C.list.forEach(function (c) { if (c !== car && (c.y || c.air)) { c.y = Math.max(0, (c.y || 0) - dt * 6); if (!c.y) { c.air = null; c.airPitch = 0; } } });
+      // машины, оставшиеся в воздухе без игрока, — на землю (циклом, а не forEach с новой функцией на каждый кадр)
+      for (var li = 0, cl = C.list; li < cl.length; li++) {
+        var c = cl[li];
+        if (c !== car && (c.y || c.air)) { c.y = Math.max(0, (c.y || 0) - dt * 6); if (!c.y) { c.air = null; c.airPitch = 0; } }
+      }
       // спецмашины
       emT -= dt;
       if (emT <= 0) {

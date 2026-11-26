@@ -184,6 +184,11 @@
   miniWrap.addEventListener("click", function () { openMap(); });
   var mapLayers = [];
   function addMapLayer(fn) { mapLayers.push(fn); }
+  /* Размер круга миникарты — из ResizeObserver: он отвечает после раскладки, когда та уже готова. Раньше drawMini читал
+     mini.clientWidth в кадре, где до него другие системы уже писали в DOM (шкала нитро, броня, подсказка), — браузер
+     синхронно пересчитывал стили и раскладку до 30 раз в секунду. Без ResizeObserver — как раньше. */
+  var miniSize = -1;
+  if (global.ResizeObserver) new global.ResizeObserver(function () { miniSize = mini.clientWidth; }).observe(mini);
 
   var markers = {};
   var beamGeo = new T.CylinderGeometry(0.9, 0.9, 60, 16, 1, true).translate(0, 30, 0);
@@ -228,7 +233,7 @@
   }
   function drawMini(dt) {
     var P = FC.player; if (!P) return;
-    var size = mini.clientWidth || 160, dpr = Math.min(global.devicePixelRatio || 1, 2);
+    var size = (miniSize >= 0 ? miniSize : mini.clientWidth) || 160, dpr = Math.min(global.devicePixelRatio || 1, 2);
     if (mini.width !== size * dpr) { mini.width = mini.height = size * dpr; }
     var c = mctx, W2 = mini.width / 2;
     var mzT = miniTarget(P);
@@ -252,25 +257,29 @@
     if (M.mapDetail) M.mapDetail(c, zoom * SCALE, "mini");
     // маршрут к меткам
     routeT -= dt;
-    Object.keys(markers).forEach(function (k) {
-      var m = markers[k];
+    // метки и слои — циклами (forEach с новой функцией и Object.keys с новым массивом — 30 раз в секунду)
+    var k, m;
+    for (k in markers) {
+      m = markers[k];
       if (m.route && routeT <= 0 && (!m.path || m.px == null || Math.hypot(P.x - m.px, P.z - m.pz) > 30 || m.mx !== m.x || m.mz !== m.z)) {
         m.path = M.roadRoute(P.x, P.z, m.x, m.z); m.px = P.x; m.pz = P.z; m.mx = m.x; m.mz = m.z;    // поиск пути по графу — дорогой
       }
       if (m.route && m.path && m.path.length) {
         c.strokeStyle = m.color; c.lineWidth = 5 / zoom / SCALE * dpr; c.lineJoin = "round"; c.globalAlpha = 0.85;
         c.beginPath(); c.moveTo(P.x, P.z);
-        m.path.forEach(function (p) { c.lineTo(p.x, p.z); });
+        for (var pi = 0; pi < m.path.length; pi++) c.lineTo(m.path[pi].x, m.path[pi].z);
         c.lineTo(m.x, m.z); c.stroke(); c.globalAlpha = 1;
       }
-    });
+    }
     if (routeT <= 0) routeT = 1.5;
-    mapLayers.forEach(function (fn) { try { fn(c, zoom * SCALE, "mini"); } catch (e) { /* слой модуля не должен ронять карту */ } });
+    for (var li = 0; li < mapLayers.length; li++) {
+      try { mapLayers[li](c, zoom * SCALE, "mini"); } catch (e) { /* слой модуля не должен ронять карту */ }
+    }
     c.restore();
     // значки меток — по краю, если за пределами
     var R2 = W2 - 10 * dpr;
-    Object.keys(markers).forEach(function (k) {
-      var m = markers[k]; if (m.blip === false) return;
+    for (k in markers) {
+      m = markers[k]; if (m.blip === false) continue;
       var dx = (m.x - P.x) * zoom * SCALE, dz = (m.z - P.z) * zoom * SCALE;
       var cs = Math.cos(yaw), sn = Math.sin(yaw);
       var sx = dx * cs - dz * sn, sz = dx * sn + dz * cs, d = Math.hypot(sx, sz);
@@ -278,7 +287,7 @@
       c.fillStyle = m.color; c.beginPath(); c.arc(W2 + sx, W2 + sz, 7 * dpr, 0, 7); c.fill();
       c.font = (11 * dpr) + "px system-ui"; c.textAlign = "center"; c.textBaseline = "middle";
       c.fillText(m.icon || "", W2 + sx, W2 + sz + 0.5);
-    });
+    }
     // игроки онлайн рядом (кто в радиусе сервера) — голубые точки, у края — прижаты к кругу
     if (FC.mp && FC.mp.remotes) {
       var csY = Math.cos(yaw), snY = Math.sin(yaw);

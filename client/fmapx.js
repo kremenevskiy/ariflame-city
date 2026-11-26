@@ -122,22 +122,25 @@
   function axisPoint(e, t) { return axisAt(e, e.len * t, {}); }
 
   /* ---- сетки поиска: узлы (120 м), отрезки рёбер (50 м) ------------------------------------------------------ */
-  var NG = 120, ngrid = {}, EG = 50, egrid = {};
-  NODES.forEach(function (n) { var k = Math.floor(n.x / NG) + "," + Math.floor(n.z / NG); (ngrid[k] || (ngrid[k] = [])).push(n.i); });
+  // ключ клетки — целое число, а не строка «gx,gz»: onRoad и nearestNode зовут каждый кадр (машина игрока, вода у людей)
+  function gkey(gx, gz) { return (gx + 32768) * 65536 + gz + 32768; }
+  function gpush(g, k, v) { var l = g.get(k); if (!l) g.set(k, l = []); l.push(v); }
+  var NG = 120, ngrid = new Map(), EG = 50, egrid = new Map();
+  NODES.forEach(function (n) { gpush(ngrid, gkey(Math.floor(n.x / NG), Math.floor(n.z / NG)), n.i); });
   EDGES.forEach(function (e) {
     var seen = {};
     for (var i = 1; i < e.px.length; i++) {
       var x0 = Math.min(e.px[i - 1], e.px[i]) - e.w / 2, x1 = Math.max(e.px[i - 1], e.px[i]) + e.w / 2;
       var z0 = Math.min(e.pz[i - 1], e.pz[i]) - e.w / 2, z1 = Math.max(e.pz[i - 1], e.pz[i]) + e.w / 2;
       for (var gx = Math.floor(x0 / EG); gx <= Math.floor(x1 / EG); gx++) for (var gz = Math.floor(z0 / EG); gz <= Math.floor(z1 / EG); gz++) {
-        var k = gx + "," + gz; if (seen[k]) continue; seen[k] = 1; (egrid[k] || (egrid[k] = [])).push(e.i);
+        var k = gkey(gx, gz); if (seen[k]) continue; seen[k] = 1; gpush(egrid, k, e.i);
       }
     }
   });
   function edgesNear(x, z, r) {
     var out = [], seen = {};
     for (var gx = Math.floor((x - r) / EG); gx <= Math.floor((x + r) / EG); gx++) for (var gz = Math.floor((z - r) / EG); gz <= Math.floor((z + r) / EG); gz++) {
-      var l = egrid[gx + "," + gz]; if (!l) continue;
+      var l = egrid.get(gkey(gx, gz)); if (!l) continue;
       for (var i = 0; i < l.length; i++) if (!seen[l[i]]) { seen[l[i]] = 1; out.push(EDGES[l[i]]); }
     }
     return out;
@@ -148,7 +151,7 @@
     for (var i = 1; i < e.px.length; i++) {
       var ax = e.px[i - 1], az = e.pz[i - 1], dx = e.px[i] - ax, dz = e.pz[i] - az, L = dx * dx + dz * dz || 1e-9;
       var t = ((x - ax) * dx + (z - az) * dz) / L; t = t < 0 ? 0 : t > 1 ? 1 : t;
-      var d = Math.hypot(ax + dx * t - x, az + dz * t - z);
+      var ex = ax + dx * t - x, ez = az + dz * t - z, d = Math.sqrt(ex * ex + ez * ez);
       if (d < best.d) { best.d = d; best.s = e.cum[i - 1] + t * Math.sqrt(L); }
     }
     return best;
@@ -165,11 +168,11 @@
     for (var r = 0; r < 40 && best < 0; r++) {
       for (var ix = gx - r; ix <= gx + r; ix++) for (var iz = gz - r; iz <= gz + r; iz++) {
         if (r && Math.abs(ix - gx) !== r && Math.abs(iz - gz) !== r) continue;
-        var l = ngrid[ix + "," + iz]; if (!l) continue;
+        var l = ngrid.get(gkey(ix, iz)); if (!l) continue;
         for (var i = 0; i < l.length; i++) { var n = NODES[l[i]], d = FC.dist2(x, z, n.x, n.z); if (d < bd) { bd = d; best = l[i]; } }
       }
       if (best >= 0 && r === 0) { r++; for (var jx = gx - 1; jx <= gx + 1; jx++) for (var jz = gz - 1; jz <= gz + 1; jz++) {
-        var l2 = ngrid[jx + "," + jz]; if (!l2) continue;
+        var l2 = ngrid.get(gkey(jx, jz)); if (!l2) continue;
         for (var j = 0; j < l2.length; j++) { var n2 = NODES[l2[j]], d2 = FC.dist2(x, z, n2.x, n2.z); if (d2 < bd) { bd = d2; best = l2[j]; } }
       } }
     }
@@ -189,9 +192,21 @@
     });
     return best;
   }
+  // расстояние до оси ребра — как project(e, x, z).d, без объекта-ответа (и тут, и там sqrt, а не Math.hypot: тот в V8
+  // не встраивается, в ~9 раз дороже и на каждый вызов создаёт числа в куче)
+  function projD(e, x, z) {
+    var bd = 1e9;
+    for (var i = 1; i < e.px.length; i++) {
+      var ax = e.px[i - 1], az = e.pz[i - 1], dx = e.px[i] - ax, dz = e.pz[i] - az, L = dx * dx + dz * dz || 1e-9;
+      var t = ((x - ax) * dx + (z - az) * dz) / L; t = t < 0 ? 0 : t > 1 ? 1 : t;
+      var ex = ax + dx * t - x, ez = az + dz * t - z, d = Math.sqrt(ex * ex + ez * ez);
+      if (d < bd) bd = d;
+    }
+    return bd;
+  }
   function onRoad(x, z) {
-    var l = egrid[Math.floor(x / EG) + "," + Math.floor(z / EG)]; if (!l) return false;
-    for (var i = 0; i < l.length; i++) { var e = EDGES[l[i]]; if (project(e, x, z).d < e.w / 2) return true; }
+    var l = egrid.get(gkey(Math.floor(x / EG), Math.floor(z / EG))); if (!l) return false;
+    for (var i = 0; i < l.length; i++) { var e = EDGES[l[i]]; if (projD(e, x, z) < e.w / 2) return true; }
     return false;
   }
 
@@ -512,37 +527,52 @@
     }
     return null;
   }
-  function polyAt(p, s) {
+  // out — готовый массив [x, z] (прохожие зовут дважды за кадр каждый); без него — новый, как раньше
+  function polyAt(p, s, out) {
     s = s < 0 ? 0 : s > p.L ? p.L : s;
     var c = p.cum, lo = 0, hi = c.length - 2;
     while (lo < hi) { var m = (lo + hi + 1) >> 1; if (c[m] <= s) lo = m; else hi = m - 1; }
     var L = (c[lo + 1] - c[lo]) || 1e-6, u = (s - c[lo]) / L;
-    return [p.pts[lo][0] + (p.pts[lo + 1][0] - p.pts[lo][0]) * u, p.pts[lo][1] + (p.pts[lo + 1][1] - p.pts[lo][1]) * u];
+    var x = p.pts[lo][0] + (p.pts[lo + 1][0] - p.pts[lo][0]) * u, z = p.pts[lo][1] + (p.pts[lo + 1][1] - p.pts[lo][1]) * u;
+    if (!out) return [x, z];
+    out[0] = x; out[1] = z; return out;
   }
 
   /* ---- столкновения и поиск зданий: контуры из fosm + столбы и деревья (addProp) -------------------------- */
-  var CELL = 40, PGRID = {}, PROPS = [];
+  var CELL = 40, PGRID = new Map(), PROPS = [];
   function addProp(x, z, r, kind) {
-    var p = { prop: true, x: x, z: z, r: r, kind: kind };
+    var p = { prop: true, x: x, z: z, r: r, kind: kind, _nq: 0 };
     PROPS.push(p);
     for (var gx = Math.floor((x - r) / CELL); gx <= Math.floor((x + r) / CELL); gx++)
-      for (var gz = Math.floor((z - r) / CELL); gz <= Math.floor((z + r) / CELL); gz++) (PGRID[gx + "," + gz] || (PGRID[gx + "," + gz] = [])).push(p);
+      for (var gz = Math.floor((z - r) / CELL); gz <= Math.floor((z + r) / CELL); gz++) gpush(PGRID, gkey(gx, gz), p);
     return p;
   }
   function removeProp(p) {
     var i = PROPS.indexOf(p); if (i >= 0) PROPS.splice(i, 1);
     for (var gx = Math.floor((p.x - p.r) / CELL); gx <= Math.floor((p.x + p.r) / CELL); gx++)
       for (var gz = Math.floor((p.z - p.r) / CELL); gz <= Math.floor((p.z + p.r) / CELL); gz++) {
-        var l = PGRID[gx + "," + gz]; if (!l) continue; var j = l.indexOf(p); if (j >= 0) l.splice(j, 1);
+        var l = PGRID.get(gkey(gx, gz)); if (!l) continue; var j = l.indexOf(p); if (j >= 0) l.splice(j, 1);
       }
   }
   function propsNear(x, z, r, out) {
     for (var gx = Math.floor((x - r) / CELL); gx <= Math.floor((x + r) / CELL); gx++)
       for (var gz = Math.floor((z - r) / CELL); gz <= Math.floor((z + r) / CELL); gz++) {
-        var l = PGRID[gx + "," + gz]; if (!l) continue;
+        var l = PGRID.get(gkey(gx, gz)); if (!l) continue;
         for (var i = 0; i < l.length; i++) if (out.indexOf(l[i]) < 0) out.push(l[i]);
       }
     return out;
+  }
+  /* Столбы и деревья рядом — в готовый массив (вернёт, сколько записано): для collide на каждый шаг. Повторы (столб на
+     стыке клеток) отсекает метка запроса на самом столбе; порядок — как у propsNear с пустым out. */
+  var propQ = 0, propScratch = [];
+  function propsInto(x, z, r, out) {
+    var n = 0, q = ++propQ;
+    for (var gx = Math.floor((x - r) / CELL); gx <= Math.floor((x + r) / CELL); gx++)
+      for (var gz = Math.floor((z - r) / CELL); gz <= Math.floor((z + r) / CELL); gz++) {
+        var l = PGRID.get(gkey(gx, gz)); if (!l) continue;
+        for (var i = 0; i < l.length; i++) { var o = l[i]; if (o._nq !== q) { o._nq = q; out[n++] = o; } }
+      }
+    return n;
   }
   // запись здания для контура куска (лениво, кэш на самом контуре)
   function recordOf(it) {
@@ -574,6 +604,7 @@
      (стоит на крыше) не стена, столбы и деревья выше 3 м не мешают (fosm.collide). */
   function collide(x, z, r, opt) {
     var y = opt && opt.y != null ? opt.y : null;
+    // ответ fosm — новый объект на каждый вызов: дописываем в него итог и его же отдаём (раньше — ещё один объект сверху)
     var c = FC.osm ? FC.osm.collide(x, z, r, y) : { x: x, z: z, hit: false, nx: 0, nz: 0 };
     x = c.x; z = c.z;
     var hit = c.hit, nx = c.nx, nz = c.nz;
@@ -585,9 +616,9 @@
       hit = true;
     }
     if (!(opt && opt.noProps) && !(y > 3)) {
-      var pl = propsNear(x, z, r + 1, []);
-      for (var i = 0; i < pl.length; i++) {
-        var o = pl[i], dx = x - o.x, dz = z - o.z, d = Math.hypot(dx, dz), m = r + o.r;
+      var pl = propScratch, pn = propsInto(x, z, r + 1, pl);
+      for (var i = 0; i < pn; i++) {
+        var o = pl[i], dx = x - o.x, dz = z - o.z, d = Math.sqrt(dx * dx + dz * dz), m = r + o.r;
         if (d < m && d > 1e-4) { x = o.x + dx / d * m; z = o.z + dz / d * m; hit = true; nx = dx / d; nz = dz / d; }
       }
     }
@@ -597,7 +628,8 @@
     }
     if (x < BX0 + 6) { x = BX0 + 6; hit = true; } if (x > BX1 - 6) { x = BX1 - 6; hit = true; }
     if (z < BZ0 + 6) { z = BZ0 + 6; hit = true; } if (z > BZ1 - 6) { z = BZ1 - 6; hit = true; }
-    return { x: x, z: z, hit: hit, nx: nx, nz: nz };
+    c.x = x; c.z = z; c.hit = hit; c.nx = nx; c.nz = nz;
+    return c;
   }
 
   /* ---- подложка карты (fhud): застройка, вода, зелень из map.json, улицы из графа, подписи ------------------ */

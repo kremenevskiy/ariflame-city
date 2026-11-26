@@ -159,13 +159,18 @@
     setTimeout(function () { e.remove(); }, 1700);
   }
 
+  var vigO = null;                                 // последняя записанная прозрачность виньетки
   FC.addSystem({
     name: "juice", order: 92,
     update: function (dt) {
       drawLines(dt);
       if (live) stepParticles(dt);
       var P = FC.player;
-      if (P) vig.style.opacity = P.hp < (P.maxHp || 100) * 0.25 ? String(0.55 + Math.sin(performance.now() / 260) * 0.25) : "0";
+      if (P) {
+        // виньетка: «0» пишем только при смене (было каждый кадр — пересчёт стилей); при малом здоровье пульсирует, как было
+        var vo = P.hp < (P.maxHp || 100) * 0.25 ? String(0.55 + Math.sin(performance.now() / 260) * 0.25) : "0";
+        if (vo !== vigO) { vigO = vo; vig.style.opacity = vo; }
+      }
     }
   });
 

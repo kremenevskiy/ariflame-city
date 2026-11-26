@@ -297,6 +297,12 @@ body.busted #cv{filter:grayscale(.7) sepia(.3) hue-rotate(180deg) brightness(.85
 #loader .shade{background:linear-gradient(180deg,rgba(var(--night),.55) 0,rgba(var(--night),0) 16%,rgba(var(--night),0) 42%,rgba(var(--night),.88) 100%)}}
 @media (prefers-reduced-motion:reduce){#loader .art,#loader .art img{animation:none}#loader.done .art,#loader.done .dock{transform:none}}
 @media (max-width:560px){.money{font-size:21px}.stars{font-size:19px}.phone{right:6px;left:6px;width:auto}}
+/* Стекло без размытия поверх живого города. backdrop-filter над холстом, который меняется каждый кадр, браузер
+   пересчитывает каждый кадр: 10–12 кнопок и плашек HUD — минус 15–35% загрузки видеокарты телефона (замер 26.11).
+   Фон у них и так плотный (0,62–0,78) — под ним размытие почти не видно. На паузе, при повороте экрана и в мини-играх
+   город стоит (fgfx: удержание кадра) — там размытие остаётся. */
+body *:not(.pause):not(.rotlay):not(.mg){-webkit-backdrop-filter:none!important;backdrop-filter:none!important}
+.tbtn{background:radial-gradient(circle at 50% 35%,rgba(40,48,78,.7),rgba(10,14,30,.7))}
 </style>
 </head>
 <body>

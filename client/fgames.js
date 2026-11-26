@@ -636,11 +636,13 @@
       if (P) P.busy = true;
       // мир на время смены стоит: игрок «за столом», а телефону не тянуть город и игру разом
       FC.paused = true;
+      if (FC.gfx && FC.gfx.hold) FC.gfx.hold("game", true);        // город под игрой стоит — не перерисовываем его каждый кадр
       function finish(res) {
         if (settled) return; settled = true;
         if (cleanup) cleanup();
         api.unbind(); api.close();
         FC.paused = wasPaused;
+        if (FC.gfx && FC.gfx.hold) FC.gfx.hold("game", false);
         if (FC.input) FC.input.enable(true);
         if (P) P.busy = wasBusy;
         running = null;

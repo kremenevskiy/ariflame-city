@@ -1322,6 +1322,9 @@
         ground.position.x = Math.round(f.x / 500) * 500; ground.position.z = Math.round(f.z / 500) * 500;
         var n = G.night || 0;
         lampHeadMat.emissiveIntensity = n * 2.4; poolMat.opacity = n * 0.55;
+        // пятна света — только в темноте: днём их прозрачность 0, но до 1100 больших прозрачных квадратов всё равно
+        // рисовались с наложением (заливка экрана у земли) — как во Флейм-Сити (fbuild), прячем
+        pools.visible = n > 0.01;
         GL.mat.emissiveIntensity = 0.05 + n * 0.6; mSignMat.emissiveIntensity = 0.15 + n * 0.9;
         var snow = !!(G.look && G.look.snow);
         if (instDirty || snow !== lastSnow || Math.hypot(f.x - lastF.x, f.z - lastF.z) > 260) { lastSnow = snow; lastF.x = f.x; lastF.z = f.z; rebuildInst(f.x, f.z); }

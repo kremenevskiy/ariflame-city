@@ -31,15 +31,16 @@
   var lx = lc.getContext("2d");
   var streaks = [];
   for (var i = 0; i < 48; i++) streaks.push({ a: Math.random() * Math.PI * 2, r: Math.random(), v: 0.6 + Math.random() * 0.9, w: 1 + Math.random() * 2 });
-  var speedWant = 0, speedNow = 0;
+  var speedWant = 0, speedNow = 0, linesOn = true;
   function drawLines(dt) {
     speedNow = FC.damp(speedNow, speedWant, speedWant > speedNow ? 10 : 4, dt);
     speedWant = 0;
     var W = global.innerWidth, H = global.innerHeight, dpr = Math.min(global.devicePixelRatio || 1, 1.5);
     if (lc.width !== Math.round(W * dpr * 0.5)) { lc.width = Math.round(W * dpr * 0.5); lc.height = Math.round(H * dpr * 0.5); }
     var cw = lc.width, ch = lc.height;
-    lx.clearRect(0, 0, cw, ch);
-    if (speedNow < 0.03) return;
+    // пустой слой не чистим каждый кадр: очистка холста на весь экран — работа композитору даже без линий
+    if (speedNow < 0.03) { if (linesOn) { lx.clearRect(0, 0, cw, ch); linesOn = false; } return; }
+    lx.clearRect(0, 0, cw, ch); linesOn = true;
     var cx = cw / 2, cy = ch * 0.46, R = Math.hypot(cw, ch) * 0.55;
     lx.lineCap = "round";
     for (var j = 0; j < streaks.length; j++) {

@@ -510,12 +510,15 @@
   var last = performance.now();
   function loop(now) {
     requestAnimationFrame(loop);
-    var dt = Math.min(0.05, (now - last) / 1000); last = now;
-    if (FC.fx) dt *= FC.fx.timeScale();                       // стоп-кадр и замедление на больших ударах
     if (document.hidden || FC.tgPaused) { last = now; return; }
     // до старта сцену закрывает экран загрузки: не считаем и не рисуем — видеокарта и поток нужны заставке (её картинка
     // иначе декодировалась секунды) и стройке города в begin()
     if (!FC.started) { last = now; return; }
+    // частота кадров (fgfx G.tick: 60 по умолчанию, настройка «Плавность»): лишний кадр экрана пропускаем целиком —
+    // ни систем, ни рендера; его время войдёт в dt следующего
+    if (G.tick && !G.tick(now)) return;
+    var dt = Math.min(0.05, (now - last) / 1000); last = now;
+    if (FC.fx) dt *= FC.fx.timeScale();                       // стоп-кадр и замедление на больших ударах
     I.poll();
     if (!FC.paused) {
       for (var i = 0; i < FC.systems.length; i++) {

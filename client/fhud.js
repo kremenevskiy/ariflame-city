@@ -319,6 +319,7 @@
     view.x = FC.player.x; view.z = FC.player.z;
     if (M.minsk && view.k > 0.16) view.k = 0.14;                  // Минск большой: открываем шире (~3 км в кадре)
     bm.classList.add("on"); FC.input.enable(false); FC.input.unlock();
+    if (FC.gfx.hold) FC.gfx.hold("map", true);                    // карта непрозрачная: город под ней не перерисовываем
     // на телефоне низ закрывают кнопки мест — ставим игрока по центру видимой части над ними
     var legH = (bm.querySelector(".legend") || {}).offsetHeight || 0;
     view.z = FC.player.z + Math.min(legH, bm.clientHeight * 0.4) / 2 / view.k;
@@ -347,7 +348,7 @@
       bigPlayers = list; drawBig();
     }).catch(function () { /* онлайн недоступен — без игроков */ });
   }
-  function closeMap() { bm.classList.remove("on"); FC.input.enable(true); if (sheet) sheet.remove(); sheet = null; if (bigTimer) { clearInterval(bigTimer); bigTimer = null; } }
+  function closeMap() { bm.classList.remove("on"); FC.input.enable(true); if (FC.gfx.hold) FC.gfx.hold("map", false); if (sheet) sheet.remove(); sheet = null; if (bigTimer) { clearInterval(bigTimer); bigTimer = null; } }
   var bigTimer = null, bigWho = 0;
   function bigLive() {
     if (bigTimer) clearInterval(bigTimer);
@@ -674,6 +675,7 @@
   function togglePause(on) {
     on = on == null ? !pause.classList.contains("on") : on;
     pause.classList.toggle("on", on); FC.paused = on; FC.input.enable(!on);
+    if (FC.gfx.hold) FC.gfx.hold("pause", on);                    // на паузе город стоит — кадр рисуется один раз
     if (on) {
       var s = FC.save.stats;
       pause.innerHTML = "<div class='pcard'><h2>Пауза</h2><p>" + esc(FC.me ? FC.me.label : "") + "</p><div class='nums'>" +

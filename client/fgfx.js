@@ -27,7 +27,9 @@
   applyQ();
 
   var canvas = document.getElementById("cv");
-  var renderer = new T.WebGLRenderer({ canvas: canvas, antialias: Q.level !== "low", powerPreference: "high-performance" });
+  // powerPreference «default», не «high-performance»: на ноутбуках с двумя видеокартами «высокая» включала дискретную —
+  // горячо и шумно ради кадров, которых и так хватает (частота кадров ограничена ниже, разрешение подстраивается само)
+  var renderer = new T.WebGLRenderer({ canvas: canvas, antialias: Q.level !== "low", powerPreference: "default" });
   renderer.setPixelRatio(Q.ratio);
   renderer.setSize(global.innerWidth, global.innerHeight, false);
   renderer.outputColorSpace = T.SRGBColorSpace;
@@ -301,6 +303,7 @@
   }
 
   function resize() {
+    holdDrawn = false;                                   // при удержании (пауза, карта) — перерисовать один кадр под новый размер
     var w = global.innerWidth, h = global.innerHeight;
     camera.aspect = w / h; camera.updateProjectionMatrix();
     renderer.setSize(w, h, false);
@@ -848,7 +851,57 @@
   var sunStepT = 0, sunDir = new T.Vector3(0, 1, 0), lightM = new T.Matrix4(), lightInv = new T.Matrix4(), snapV = new T.Vector3();
   var ORIGIN = new T.Vector3(0, 0, 0), UP = new T.Vector3(0, 1, 0), shadowsOn = true, wasIndoor = false;
   var fpsT = 0, fpsN = 0, started = performance.now(), downgraded = false;
+  /* ---- частота кадров и «удержание» ------------------------------------------------------------------------
+   * Частота: по умолчанию 60 к/с. На экранах 120 Гц (MacBook, многие Android) цикл рисовал 120 кадров — вдвое больше
+   * работы видеокарте и процессору ради плавности, которую в игре почти не видно (замер 26.11: Минск на MacBook — 120 к/с,
+   * видеокарта занята ~70%). Настройка «Плавность» в «Настройках» телефона: 30 — экономно, 60, «макс» — как частота
+   * экрана; хранится в localStorage fc.fps; ?cap=30|60|0 — для замеров. Лишние кадры экрана пропускаем по накопителю
+   * времени (90/120/144 Гц дают ровные 60 в среднем), время пропущенных кадров уходит в dt следующего.
+   * Удержание: пауза, большая карта, мини-игра закрывают город — сцена рисуется один раз и стоит (картинка на холсте
+   * остаётся), пока удержание не снято; мир под картой считается не чаще 30 раз в секунду. */
+  var capQs = (global.location.search.match(/[?&]cap=(\d+)/) || [])[1];
+  function capRead() {
+    if (capQs != null) return +capQs;
+    var v = null; try { v = global.localStorage.getItem("fc.fps"); } catch (e) { v = null; }
+    return v === "30" ? 30 : v === "max" ? 0 : 60;
+  }
+  var capFps = capRead(), capAcc = 0, capPrev = 0;
+  var holds = {}, holdN = 0, holdDrawn = false;
+  G.cap = function () { return capFps; };
+  G.setCap = function (n) {
+    capFps = n === 30 ? 30 : n === 0 ? 0 : 60; capAcc = 0;
+    try { global.localStorage.setItem("fc.fps", capFps === 0 ? "max" : String(capFps)); } catch (e) { /* приватное окно */ }
+    FC.emit("fps:cap", capFps);
+  };
+  // кадр экрана — считать ли его (fmain зовёт до систем): false — пропустить, время копится до следующего
+  G.tick = function (now) {
+    var fps = holdN > 0 ? (capFps ? Math.min(capFps, 30) : 30) : capFps;
+    var d = now - capPrev; capPrev = now;
+    if (!fps) return true;
+    var iv = 1000 / fps;
+    capAcc = d > 250 ? iv : capAcc + d;
+    if (capAcc < iv * 0.85) return false;              // запас 15%: на 60 Гц не теряем кадры из-за дрожания отметок
+    capAcc -= iv; if (capAcc > iv) capAcc = 0;          // после рывка не «догоняем» пачкой кадров
+    return true;
+  };
+  G.hold = function (k, on) {
+    on = !!on; if (!!holds[k] === on) return;
+    holds[k] = on; holdN += on ? 1 : -1; holdDrawn = false;
+  };
+  G.held = function () { return holdN > 0; };
+  // строка «Плавность» в «Настройках» телефона — сразу под «Графикой»
+  FC.on("phone:settings", function (list) {
+    if (!list) return;
+    var row = document.createElement("div"); row.className = "row";
+    row.innerHTML = "<span>Плавность</span><select id='fps-sel'><option value='30'>экономно · 30 к/с</option>" +
+      "<option value='60'>60 к/с</option><option value='0'>максимум</option></select>";
+    var sel = row.querySelector("select"); sel.value = String(capFps);
+    sel.addEventListener("change", function () { G.setCap(+sel.value); });
+    var q = list.querySelector("#q-sel"), qr = q && q.parentNode;
+    if (qr && qr.parentNode === list && qr.nextSibling) list.insertBefore(row, qr.nextSibling); else list.appendChild(row);
+  });
   function frame(dt) {
+    if (holdN > 0 && holdDrawn) return;                 // город закрыт паузой/картой — кадр уже на холсте
     applyTime();
     facadeU.uNight.value = FC.clock.night;
     facadeU.uSky.value.copy(skyU.uHor.value).lerp(skyU.uTop.value, 0.35);
@@ -892,6 +945,7 @@
       bloom.strength = 0.3 + FC.clock.night * 0.35;
       composer.render(dt);
     } else renderer.render(scene, camera);
+    holdDrawn = holdN > 0;
     // авто-качество: первые 8 секунд
     fpsT += dt; fpsN++;
     if (!downgraded && !qs && fpsT > 2) {
@@ -943,6 +997,7 @@
     scene.fog.far = Q.far; camera.far = Q.far + 400; camera.updateProjectionMatrix();
     sky.scale.setScalar(Q.far + 200);
     resize();
+    holdDrawn = false;
     FC.emit("quality", Q.level);
   }
 

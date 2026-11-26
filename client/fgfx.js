@@ -967,6 +967,7 @@
     }
     updateRain(dt);
     weatherTick();
+    for (var bi = 0; bi < preRender.length; bi++) preRender[bi]();
     cullInstances();
     if (shadowJobs.length) shadowWork(FC.started ? 1.5 : 8);
     gpuBegin();
@@ -1113,6 +1114,9 @@
    * индексов и своя сфера — камера солнца отбрасывает всё, что вне карты. Сам меш в тенях больше не участвует.
    * Виды видимы только на время прохода теней (обёртка shadowMap.render): в three r160 списки основного прохода уже
    * собраны к этому моменту, так что в кадр они не попадают. */
+  // перед каждой отрисовкой (и на паузе — фоторежим двигает камеру): отбор по камере у модулей (fosm — куски за дымкой)
+  var preRender = [];
+  G.beforeRender = function (fn) { preRender.push(fn); };
   var shadowSets = [], shadowJobs = [];
   // в сцене ли объект: у выгруженного куска Минска меш остаётся в своей группе, а группа — уже без родителя
   function inScene(o) { while (o.parent) o = o.parent; return o === scene; }

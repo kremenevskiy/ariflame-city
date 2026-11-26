@@ -1342,6 +1342,23 @@
 
   /* ---- кадр ----------------------------------------------------------------------------------------------- */
   var t = 0, pt = 0, lastF = { x: 1e9, z: 1e9 }, lastSnow = null;
+  /* Куски за дымкой не рисуем: дальше fog.far туман закрашивает всё целиком (в обоих видах тумана fogF = 1). Туман
+   * считается по глубине вдоль взгляда (vFogDepth), а не по расстоянию — поэтому прячем кусок, только если даже ближний
+   * угол его коробки (с запасом 60 м по сторонам и высотой до 300 м) глубже fog.far + 30 м. Проверка — каждый кадр
+   * (поворот камеры), 8 углов на кусок, без выделений памяти. */
+  var fogFwd = new T.Vector3();
+  function fogCull() {
+    var cam = G.camera, fog = G.scene && G.scene.fog; if (!fog) return;
+    cam.getWorldDirection(fogFwd);
+    var px = cam.position.x, py = cam.position.y, pz = cam.position.z, fx = fogFwd.x, fy = fogFwd.y, fz = fogFwd.z, lim = fog.far + 30;
+    for (var k in loaded) {
+      var c = loaded[k], s = byKey[k], x0 = s.x0 - 60 - px, x1 = s.x0 + SUP + 60 - px, z0 = s.z0 - 60 - pz, z1 = s.z0 + SUP + 60 - pz;
+      var dx = Math.min(x0 * fx, x1 * fx), dz = Math.min(z0 * fz, z1 * fz), dy = Math.min((-10 - py) * fy, (300 - py) * fy);
+      var on = dx + dy + dz < lim;                                  // минимум линейной функции на коробке — по углам
+      if (c.grp.visible !== on) c.grp.visible = on;
+    }
+  }
+  if (G.beforeRender) G.beforeRender(fogCull);                  // и на паузе: фоторежим и повтор двигают камеру
   FC.addSystem({
     name: "osm", order: 39,
     update: function (dt) {

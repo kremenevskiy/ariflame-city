@@ -153,8 +153,9 @@
       glHooked = true;
       F.gfx.renderer.domElement.addEventListener("webglcontextlost", function () { report("webgl", "потерян контекст WebGL"); }, false);
     }
+    var floorY = F.inside && F.inside.active && typeof F.inside.floorY === "function" ? F.inside.floorY() : 0;
     if (!isFinite(P.x) || !isFinite(P.z)) report("state", "позиция игрока не число (NaN)");
-    else if ((P.y || 0) < -30) report("state", "игрок провалился под мир");
+    else if ((P.y || 0) < floorY - 30) report("state", "игрок провалился под мир");
     if (P.mode === "car") {
       var c = P.car;
       if (!c) report("state", "режим «в машине», а машины нет");

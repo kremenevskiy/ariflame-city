@@ -39,7 +39,10 @@
   function bindCanvas(cv) {
     cv.addEventListener("mousedown", function (e) {
       if (I.touch) return;
-      if (!I.locked && I.enabled && cv.requestPointerLock) { cv.requestPointerLock(); return; }
+      if (!I.locked && I.enabled && cv.requestPointerLock) {
+        try { var pr = cv.requestPointerLock(); if (pr && pr.catch) pr.catch(function () {}); } catch (err) { /* ignore */ }
+        return;
+      }
       if (e.button === 0) down("punch");
       if (e.button === 2) down("aim");
     });

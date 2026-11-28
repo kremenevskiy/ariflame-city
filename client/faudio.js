@@ -36,17 +36,21 @@
       noiseBuf = makeNoise();
       melInit();
     }
-    if (ctx.state !== "running") ctx.resume();                // iOS: и «interrupted» после сворачивания
+    if (ctx.state !== "running") ctx.resume().catch(function () {});          // iOS: и «interrupted» после сворачивания
     return ctx;
   }
   ["pointerdown", "keydown", "touchstart"].forEach(function (ev) { global.addEventListener(ev, wake, { passive: true }); });
   document.addEventListener("visibilitychange", function () {
     if (!ctx) return;
-    if (document.hidden) ctx.suspend(); else ctx.resume();
+    if (document.hidden) ctx.suspend().catch(function () {}); else ctx.resume().catch(function () {});
     melPause(document.hidden);
   });
   // Telegram свернул мини-апп (fcore/finput шлют app:hidden) — звук на паузу
-  FC.on("app:hidden", function (hidden) { if (!ctx) return; if (hidden) ctx.suspend(); else ctx.resume(); melPause(hidden); });
+  FC.on("app:hidden", function (hidden) {
+    if (!ctx) return;
+    if (hidden) ctx.suspend().catch(function () {}); else ctx.resume().catch(function () {});
+    melPause(hidden);
+  });
 
   /* ---- треки станций: один <audio> через граф WebAudio (громкость, приглушение в диалогах и «выкл» — общие) -- */
   // треки станций — необязательные, из config.js: music: {fm: [...], lofi: [...], night: [...]} → <musicBase><id>.m4a;
